@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plant Sensors</title>
+</head>
+
+<body>
+
+<h1>Plant Sensor Data</h1>
+
+<p>pH: <span id="ph"></span></p>
+<p>Temperature: <span id="temperature"></span> °C</p>
+<p>Humidity: <span id="humidity"></span> %</p>
+
+<script>
+    fetch("/sensors")
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("ph").textContent = data.ph;
+            document.getElementById("temperature").textContent = data.temperature;
+            document.getElementById("humidity").textContent = data.humidity;
+        });
+</script>
+
+</body>
+</html>
