@@ -1,108 +1,111 @@
 #include <WiFi.h> // Wifi of the ESP32
-#include <WiFiClientSecure.h> // Https secure connections
 #include <HTTPClient.h>  // Http methods (Get, post, ...)
 #include <ArduinoJson.h> // Allow us to work with JSON using the ESP32
+#include <WebServer.h>
 
 /* Code for the sensor */
-#include <DHT.h>
+// #include <DHT.h>
 
-#define DHTPIN 4
-#define DHTTYPE DHT11
+// #define DHTPIN 4
+// #define DHTTYPE DHT11
 
-DHT dht(DHTPIN, DHTTYPE);
+// DHT dht(DHTPIN, DHTTYPE);
 
 
 /* ================= */
 // Configuration of the red
-#define WIFI_SSID "HONOR 400"
-#define WIFI_PASSWORD "1234321q"
+#define WIFI_SSID "L@nde01"
+#define WIFI_PASSWORD "M1gat0l0c02@"
 
 // Server URL
-const char* serverURL = "http://10.11.86.253:8080/sensors";
+const char* serverURL = "http://192.168.100.5:8080/sensors";
 
+/*  Server ESP32  */
+WebServer server(80);
+
+
+// Method getSensorJSON
+String getSensorJSON() {
+
+    // Read the sensors
+    float temperature = 15;
+    float humidity = 16;
+    float ph = 20.0;
+
+    // Create JSON
+    JsonDocument doc;
+
+    doc["ph"] = ph;
+    doc["temperature"] = temperature;
+    doc["humidity"] = humidity;
+
+    String json;
+    serializeJson(doc, json);
+
+    return json;
+}
+
+
+// Method CaptureData
+void captureData() {
+
+    // Read the sensors and create JSON
+    String json = getSensorJSON();
+
+    Serial.println("Capture requested!");
+    Serial.println("Sensor data:");
+    Serial.println(json);
+
+
+    // Send the JSON back to whoever requested /capture
+    server.send(200, "application/json", json);
+}
+
+
+/* ============================= */
 void setup() {
+
     Serial.begin(115200);
 
-    dht.begin();
+    // dht.begin();
+
     /*     Connect ESP32 to Wifi    */
 
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     Serial.print("Connecting to Wi-Fi");
+
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
     }
+
     Serial.println();
     Serial.println("Connected!");
 
     Serial.print("ESP32 IP: ");
     Serial.println(WiFi.localIP());
+
     /* ================================ */
-    
+
+
+    /*  Activate the server  */
+
+    server.on("/capture", HTTP_GET, captureData);
+
+    server.begin();
+
+    Serial.println("HTTP server started");
+
+    /* ================================ */
 }
+
 
 void loop() {
 
-    /*     Data simulation     */
-    float temperature = dht.readTemperature();
-    float humidity = dht.readHumidity();
-    float ph = 20.0;
+    /*     Listen for requests     */
 
-    // Create JSON and save the data
-    JsonDocument doc;
-    doc["ph"] = ph;
-    doc["temperature"] = temperature;
-    doc["humidity"] = humidity;
-    
+    server.handleClient();
 
-    // Converting JSON -> String
-    String json;
-    serializeJson(doc, json);
-
-    Serial.println("Sending JSON:");
-    Serial.println(json);
-   
-    
-    /*     Connection ESP32 with the server     */
-
-    if (WiFi.status() == WL_CONNECTED) {
-        
-        // Create the https client
-        WiFiClient client;
-        HTTPClient http;
-
-        if (http.begin(client, serverURL)) {
-
-            http.addHeader("Content-Type", "application/json");
-
-            int responseCode = http.POST(json);
-
-            Serial.print("HTTP response code: ");
-            Serial.println(responseCode);
-
-            if (responseCode > 0) {
-
-                String response = http.getString();
-
-                Serial.println("Server response:");
-                Serial.println(response);
-
-            } else {
-
-                Serial.print("HTTP POST failed: ");
-                Serial.println(http.errorToString(responseCode));
-            }
-
-            http.end();
-
-        } else {
-            Serial.println("Unable to connect to server");
-        }
-
-    } else {
-        Serial.println("Wi-Fi disconnected!");
-    }
     /* ================================ */
-    delay(5000);
 }
