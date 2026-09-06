@@ -1,20 +1,123 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Plant Sensors</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+    <title>Plant Monitor</title>
 
     <link rel="stylesheet" href="/css/style.css">
+
+
 </head>
 
 <body>
 
-<h1>Plant Sensor Data</h1>
-<p>pH: <span id="ph"></span></p>
-<p>Temperature: <span id="temperature"></span> °C</p>
-<p>Humidity: <span id="humidity"></span> %</p>
-<button id="CaptureData">Capture Data</button>
-<script src="/js/script.js"></script>
+<div class="dashboard">
 
+
+    <header>
+        <div>
+            <h1>🌱 Plant Monitor</h1>
+            <p>Real-time environmental conditions</p>
+        </div>
+
+        <div class="status">
+            <span class="status-dot"></span>
+            System Online
+        </div>
+    </header>
+
+    <main>
+
+        <section class="sensor-grid">
+
+            <div class="sensor-card ph-card">
+                <div class="sensor-icon">🧪</div>
+
+                <div class="sensor-info">
+                    <h2>pH Level</h2>
+                    <p class="sensor-value">
+                        <span id="ph">--</span>
+                    </p>
+                    <span class="sensor-unit">pH</span>
+                </div>
+            </div>
+
+
+            <div class="sensor-card temperature-card">
+                <div class="sensor-icon">🌡️</div>
+
+                <div class="sensor-info">
+                    <h2>Temperature</h2>
+                    <p class="sensor-value">
+                        <span id="temperature">--</span>
+                    </p>
+                    <span class="sensor-unit">°C</span>
+                </div>
+            </div>
+
+
+            <div class="sensor-card humidity-card">
+                <div class="sensor-icon">💧</div>
+
+                <div class="sensor-info">
+                    <h2>Humidity</h2>
+                    <p class="sensor-value">
+                        <span id="humidity">--</span>
+                    </p>
+                    <span class="sensor-unit">%</span>
+                </div>
+            </div>
+
+
+            <!-- ML Prediction -->
+            <div class="sensor-card plant-card">
+                <div class="sensor-icon">🌱</div>
+
+                <div class="sensor-info">
+                    <h2>Recommended Plant</h2>
+
+                    <p class="sensor-value">
+                        <span id="prediction">--</span>
+                    </p>
+
+                    <span class="sensor-unit">
+                    Based on current conditions
+                </span>
+                </div>
+            </div>
+
+        </section>
+
+
+        <section class="control-panel">
+
+            <h2>Sensor Control</h2>
+
+            <p>
+                Get the latest measurements from the ESP32 and determine
+                which plant could live in these conditions.
+            </p>
+
+            <button id="CaptureData">
+                <span id="buttonText">Capture Data</span>
+            </button>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+        Plant Monitoring System
+    </footer>
+
+
+</div>
+
+<script src="/js/script.js"></script>
 </body>
 </html>

@@ -1,7 +1,11 @@
 package com.codewithmosh.plantclassifier.model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
+@Getter
+@Setter
 @Entity
 @Table(name ="SensorData")
 public class SensorData {
@@ -13,31 +17,15 @@ public class SensorData {
     private double temperature;
     private double humidity;
 
+    public SensorData(double ph, double temperature, double humidity) {
+        this.ph = ph;
+        this.temperature = temperature;
+        this.humidity = humidity;
+    }
+
     public SensorData(){
 
     }
 
-    public double getPh() {
-        return ph;
-    }
 
-    public void setPh(double ph) {
-        this.ph = ph;
-    }
-
-    public double getTemperature() {
-        return temperature;
-    }
-
-    public void setTemperature(double temperature) {
-        this.temperature = temperature;
-    }
-
-    public double getHumidity() {
-        return humidity;
-    }
-
-    public void setHumidity(double humidity) {
-        this.humidity = humidity;
-    }
 }

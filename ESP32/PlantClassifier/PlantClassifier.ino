@@ -2,7 +2,12 @@
 #include <HTTPClient.h>  // Http methods (Get, post, ...)
 #include <ArduinoJson.h> // Allow us to work with JSON using the ESP32
 #include <WebServer.h>
-
+/*
+Board:
+    - ESP32
+Library:
+    - ArduinoJson
+*/
 /* Code for the sensor */
 // #include <DHT.h>
 
@@ -13,6 +18,7 @@
 
 
 /* ================= */
+
 // Configuration of the red
 #define WIFI_SSID "L@nde01"
 #define WIFI_PASSWORD "M1gat0l0c02@"
@@ -21,10 +27,13 @@
 const char* serverURL = "http://192.168.100.5:8080/sensors";
 
 /*  Server ESP32  */
+// Allow esp32 behave like a web server
 WebServer server(80);
 
 
 // Method getSensorJSON
+// This method just convert the type of the data 
+// Data -> JsonDocument -> String 
 String getSensorJSON() {
 
     // Read the sensors
@@ -58,6 +67,7 @@ void captureData() {
 
 
     // Send the JSON back to whoever requested /capture
+    // StatusCode and the data in json format
     server.send(200, "application/json", json);
 }
 

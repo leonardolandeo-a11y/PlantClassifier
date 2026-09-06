@@ -1,7 +1,402 @@
-body {
-    font-family: Arial, sans-serif;
+/* ==========================================================================
+   1. BIO-TECH DARK THEME & VARIABLES
+   ========================================================================== */
+:root {
+    /* Dark Mode Palette */
+    --bg-dark: #070d09;
+    --bg-card: rgba(15, 25, 18, 0.65);
+    --bg-card-hover: rgba(22, 38, 27, 0.85);
+    --border-glass: 1px solid rgba(52, 211, 153, 0.12);
+    --border-glow: 1px solid rgba(52, 211, 153, 0.35);
+
+    /* Typography Colors */
+    --text-main: #f0fdf4;
+    --text-muted: #86efac;
+    --text-subtle: #4ade80;
+
+    /* Bioluminescent Sensor Colors */
+    --glow-ph: #a855f7;
+    --glow-ph-bg: rgba(168, 85, 247, 0.12);
+    --glow-temp: #f97316;
+    --glow-temp-bg: rgba(249, 115, 22, 0.12);
+    --glow-humidity: #06b6d4;
+    --glow-humidity-bg: rgba(6, 182, 212, 0.12);
+    --glow-plant: #10b981;
+
+    /* UI Radii & Animations */
+    --radius-card: 20px;
+    --radius-pill: 999px;
+    --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-h1 {
+/* ==========================================================================
+   2. GLOBAL RESET & AMBIENT ANIMATED BACKGROUND
+   ========================================================================== */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--text-main);
+    background-color: var(--bg-dark);
+    background-image:
+            radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.15) 0%, transparent 45%),
+            radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 45%),
+            radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.05) 0%, transparent 60%);
+    background-attachment: fixed;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   3. LAYOUT
+   ========================================================================== */
+.dashboard {
+    width: min(1100px, 92%);
+    margin: 0 auto;
+    padding: 3rem 0 2rem;
+}
+
+main {
+    display: grid;
+    gap: 2rem;
+}
+
+/* ==========================================================================
+   4. HEADER & RADAR STATUS
+   ========================================================================== */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2.5rem;
+}
+
+header h1 {
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #ffffff 30%, #a7f3d0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+header p {
+    color: #6ee7b7;
+    font-size: 0.95rem;
+    opacity: 0.8;
+}
+
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #a7f3d0;
+    background: rgba(15, 25, 18, 0.8);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: var(--border-glass);
+    border-radius: var(--radius-pill);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+}
+
+.status-dot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #10b981;
+}
+
+.status-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1px solid #10b981;
+    animation: radar-sweep 2s infinite ease-out;
+}
+
+@keyframes radar-sweep {
+    0% { transform: scale(0.8); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* ==========================================================================
+   5. SENSOR CARDS (BENTO GRID)
+   ========================================================================== */
+.sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.sensor-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.75rem;
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: var(--border-glass);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    transition: all 0.3s var(--ease-spring);
+}
+
+.sensor-card:hover {
+    transform: translateY(-5px);
+    background: var(--bg-card-hover);
+    border: var(--border-glow);
+}
+
+.sensor-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    font-size: 1.8rem;
+    border-radius: 16px;
+    transition: transform 0.3s var(--ease-spring);
+}
+
+.sensor-card:hover .sensor-icon {
+    transform: scale(1.1) rotate(-3deg);
+}
+
+/* Custom Glow Themes */
+.ph-card {
+    box-shadow: inset 0 1px 0 rgba(168, 85, 247, 0.3);
+}
+.ph-card .sensor-icon {
+    background: var(--glow-ph-bg);
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+}
+
+.temperature-card {
+    box-shadow: inset 0 1px 0 rgba(249, 115, 22, 0.3);
+}
+.temperature-card .sensor-icon {
+    background: var(--glow-temp-bg);
+    box-shadow: 0 0 15px rgba(249, 115, 22, 0.2);
+}
+
+.humidity-card {
+    box-shadow: inset 0 1px 0 rgba(6, 182, 212, 0.3);
+}
+.humidity-card .sensor-icon {
+    background: var(--glow-humidity-bg);
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+}
+
+.sensor-info h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #a7f3d0;
+    margin-bottom: 0.2rem;
+}
+
+.sensor-value {
+    font-size: clamp(2rem, 3.5vw, 2.4rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #ffffff;
+    line-height: 1;
+}
+
+.sensor-unit {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6ee7b7;
+    opacity: 0.7;
+}
+
+/* ==========================================================================
+   6. AI PLANT RECOMMENDATION NODE (HERO CARD)
+   ========================================================================== */
+.plant-card {
+    grid-column: 1 / -1;
+    padding: 2.25rem;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%), var(--bg-card);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 35px rgba(16, 185, 129, 0.15);
+}
+
+.plant-card::before {
+    content: "AI MODEL";
+    position: absolute;
+    top: 1.25rem;
+    right: 1.5rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    color: #34d399;
+    background: rgba(52, 211, 153, 0.12);
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.plant-card .sensor-icon {
+    width: 70px;
+    height: 70px;
+    min-width: 70px;
+    font-size: 2.2rem;
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.plant-card .sensor-value {
+    font-size: clamp(2.2rem, 4vw, 3rem);
+    color: #6ee7b7;
+    text-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
+}
+
+#prediction {
+    text-transform: capitalize;
+}
+
+/* ==========================================================================
+   7. CONTROL PANEL & INTERACTIVE TRIGGER
+   ========================================================================== */
+.control-panel {
+    padding: 2.5rem;
     text-align: center;
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: var(--border-glass);
+    border-radius: var(--radius-card);
+}
+
+.control-panel h2 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 0.5rem;
+}
+
+.control-panel p {
+    max-width: 540px;
+    margin: 0 auto 1.75rem;
+    font-size: 0.95rem;
+    color: #93c5fd;
+    opacity: 0.8;
+}
+
+#CaptureData {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 2.5rem;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #042f2e;
+    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 0 25px rgba(16, 185, 129, 0.4);
+    transition: all 0.25s var(--ease-spring);
+}
+
+#CaptureData:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 0 35px rgba(52, 211, 153, 0.6);
+    background: linear-gradient(135deg, #6ee7b7 0%, #34d399 100%);
+}
+
+#CaptureData:active {
+    transform: translateY(0) scale(0.97);
+}
+
+#CaptureData:disabled {
+    background: #1e3a2b;
+    color: #6ee7b7;
+    box-shadow: none;
+    cursor: wait;
+    opacity: 0.7;
+}
+
+/* Loading Pulse Spinner */
+#CaptureData:disabled #buttonText::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 10px;
+    border: 2px solid rgba(110, 231, 183, 0.2);
+    border-top-color: #34d399;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: -2px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   8. FOOTER
+   ========================================================================== */
+footer {
+    margin-top: 2.5rem;
+    font-size: 0.8rem;
+    text-align: center;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #34d399;
+    opacity: 0.4;
+}
+
+/* ==========================================================================
+   9. RESPONSIVE LAYOUT
+   ========================================================================== */
+@media (max-width: 900px) {
+    .sensor-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard {
+        padding-top: 1.5rem;
+    }
+
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1.25rem;
+    }
+
+    .sensor-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .plant-card {
+        grid-column: 1;
+    }
+
+    #CaptureData {
+        width: 100%;
+    }
 }
