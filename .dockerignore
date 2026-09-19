@@ -1,0 +1,15 @@
+target
+.idea
+.vscode
+.git
+.gitignore
+
+.env
+
+*.iml
+
+MLClassification/venv
+MLClassification/.venv
+
+__pycache__
+*.pyc
