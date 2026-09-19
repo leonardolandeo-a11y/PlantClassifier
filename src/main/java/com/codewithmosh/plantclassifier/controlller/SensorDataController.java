@@ -37,7 +37,7 @@ public class SensorDataController {
         // retieve() -> Get the response of the ESP32'servers
         // body(SensorData.class) -> take the response body and convert it into a SensorData object
         SensorData data = restClient.get()
-                .uri("http://192.168.100.17/capture")
+                .uri("http://10.94.142.2/capture")
                 .retrieve()
                 .body(SensorData.class);
         // Save data in the DB
@@ -50,5 +50,3 @@ public class SensorDataController {
 
     }
 }
-
-

@@ -9,19 +9,17 @@ Library:
     - ArduinoJson
 */
 /* Code for the sensor */
-// #include <DHT.h>
+#include <DHT.h>
 
-// #define DHTPIN 4
-// #define DHTTYPE DHT11
+#define DHTPIN 11
+#define DHTTYPE DHT11
 
-// DHT dht(DHTPIN, DHTTYPE);
-
-
+DHT dht(DHTPIN, DHTTYPE);
 /* ================= */
 
 // Configuration of the red
-#define WIFI_SSID "L@nde01"
-#define WIFI_PASSWORD "M1gat0l0c02@"
+#define WIFI_SSID "HONOR 400"
+#define WIFI_PASSWORD "1234321q"
 
 // Server URL
 const char* serverURL = "http://192.168.100.5:8080/sensors";
@@ -32,13 +30,13 @@ WebServer server(80);
 
 
 // Method getSensorJSON
-// This method just convert the type of the data 
-// Data -> JsonDocument -> String 
+// This method just convert the type of the data
+// Data -> JsonDocument -> String
 String getSensorJSON() {
 
     // Read the sensors
-    float temperature = 15;
-    float humidity = 16;
+    float temperature = dht.readTemperature();
+    float humidity = dht.readHumidity();
     float ph = 20.0;
 
     // Create JSON
@@ -77,7 +75,7 @@ void setup() {
 
     Serial.begin(115200);
 
-    // dht.begin();
+    dht.begin();
 
     /*     Connect ESP32 to Wifi    */
 

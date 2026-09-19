@@ -1,0 +1,43 @@
+services:
+
+  db:
+    image: postgres:17-alpine
+    container_name: plantclassifier-db
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "${POSTGRES_PORT}:5432"
+
+    volumes:
+      - plantclassifier_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  app:
+    build: .
+    container_name: plantclassifier-app
+
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "${APP_PORT}:8080"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+volumes:
+  plantclassifier_postgres_data:
