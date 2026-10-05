@@ -1,5 +1,4 @@
 #include <WiFi.h> // Wifi of the ESP32
-#include <HTTPClient.h>  // Http methods (Get, post, ...)
 #include <ArduinoJson.h> // Allow us to work with JSON using the ESP32
 #include <WebServer.h>
 /*
@@ -7,25 +6,33 @@ Board:
     - ESP32
 Library:
     - ArduinoJson
+    - DHT sensor library by Adafruit
 */
 /* Code for the sensor */
 #include <DHT.h>
 
-#define DHTPIN 11
+#define DHTPIN 22
+
 #define DHTTYPE DHT11
+#define PHPIN 34
+
+/*Simulacion*/
+#define TEMPPIN 35
+
+/*==================*/
 
 DHT dht(DHTPIN, DHTTYPE);
 /* ================= */
 
 // Configuration of the red
-#define WIFI_SSID "HONOR 400"
-#define WIFI_PASSWORD "1234321q"
+#define WIFI_SSID "Galaxy A05 6201"
+#define WIFI_PASSWORD "contraseña2"
 
-// Server URL
-const char* serverURL = "http://192.168.100.5:8080/sensors";
+
 
 /*  Server ESP32  */
 // Allow esp32 behave like a web server
+// Port: 80
 WebServer server(80);
 
 
@@ -35,9 +42,15 @@ WebServer server(80);
 String getSensorJSON() {
 
     // Read the sensors
-    float temperature = dht.readTemperature();
-    float humidity = dht.readHumidity();
-    float ph = 20.0;
+    float rawTemperature = analogRead(TEMPPIN); // dht.readTemperature()
+    // float humidity = 85; // dht.readHumidity()
+    float rawPH = analogRead(PHPIN); // analogRead(PHPIN)
+    float ph = round((rawPH/4095.0) * 14.0);
+
+    /* Simulacion*/
+    float temperature = round((rawTemperature / 4095.0) * 35.0);
+    float humidity = round(((rawTemperature / 4095.0) * 100.0 + (rawPH / 4095.0) * 100.0) / 2.0);
+    /* ================= */
 
     // Create JSON
     JsonDocument doc;
