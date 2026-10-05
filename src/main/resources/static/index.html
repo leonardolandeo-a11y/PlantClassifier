@@ -3,83 +3,330 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plant Monitor</title>
+
+    <title>Plant Robot Control</title>
+
     <link rel="stylesheet" href="/css/style.css">
 </head>
+
 <body>
 
 <div class="dashboard">
 
-    <header class="topbar">
-        <div class="header-left">
-            <h1>🌱 Plant Monitor</h1>
-        </div>
+    <!-- ===================================================== -->
+    <!-- HEADER -->
+    <!-- ===================================================== -->
 
+    <header class="topbar">
+
+        <div class="header-left">
+            <h1>🌱 Plant Robot Control</h1>
+
+            <p class="subtitle">
+                Movement, sensors and plant recommendation
+            </p>
+        </div>
 
     </header>
 
+
     <main>
 
-        <section class="sensor-grid">
+        <!-- ================================================= -->
+        <!-- ROBOT MOVEMENT -->
+        <!-- ================================================= -->
 
-            <div class="sensor-card ph-card">
-                <div class="sensor-icon">🧪</div>
-                <div class="sensor-info">
-                    <h2>pH Level</h2>
-                    <p class="sensor-value"><span id="ph">--</span></p>
-                    <span class="sensor-unit">pH</span>
+        <section class="movement-section">
+
+            <div class="section-header">
+
+                <div>
+                    <h2>Robot Movement</h2>
+
+                    <p>
+                        Control the robot using your keyboard.
+                        Release the key to stop.
+                    </p>
                 </div>
+
+                <div class="movement-status-box">
+
+                    <span class="status-label">
+                        Current movement
+                    </span>
+
+                    <span
+                            id="movementStatus"
+                            class="movement-status"
+                    >
+                        STOP
+                    </span>
+
+                </div>
+
             </div>
 
-            <div class="sensor-card temperature-card">
-                <div class="sensor-icon">🌡️</div>
-                <div class="sensor-info">
-                    <h2>Temperature</h2>
-                    <p class="sensor-value"><span id="temperature">--</span></p>
-                    <span class="sensor-unit">°C</span>
-                </div>
-            </div>
 
-            <div class="sensor-card humidity-card">
-                <div class="sensor-icon">💧</div>
-                <div class="sensor-info">
-                    <h2>Humidity</h2>
-                    <p class="sensor-value"><span id="humidity">--</span></p>
-                    <span class="sensor-unit">%</span>
-                </div>
-            </div>
+            <div class="keyboard-control">
 
-            <div class="sensor-card plant-card large-card">
-                <div class="sensor-icon big-icon">🌿</div>
-                <div class="sensor-info">
-                    <div class="plant-header">
-                        <h2>Recommended Plant</h2>
+                <div class="keyboard-title">
+                    Keyboard Controls
+                </div>
+
+                <div class="keyboard-layout">
+
+                    <div class="key-row">
+
+                        <div class="keyboard-key">
+                            <span class="key-letter">W</span>
+                            <span class="key-action">
+                                Forward
+                            </span>
+                        </div>
+
                     </div>
 
-                    <p class="sensor-value prediction-value">
-                        <span id="prediction">--</span>
-                    </p>
 
+                    <div class="key-row">
+
+                        <div class="keyboard-key">
+                            <span class="key-letter">A</span>
+                            <span class="key-action">
+                                Left
+                            </span>
+                        </div>
+
+                        <div class="keyboard-key">
+                            <span class="key-letter">S</span>
+                            <span class="key-action">
+                                Backward
+                            </span>
+                        </div>
+
+                        <div class="keyboard-key">
+                            <span class="key-letter">D</span>
+                            <span class="key-action">
+                                Right
+                            </span>
+                        </div>
+
+                    </div>
 
                 </div>
+
+
+                <div class="movement-help">
+
+                    <p>
+                        <strong>W</strong>
+                        Forward
+                    </p>
+
+                    <p>
+                        <strong>A</strong>
+                        Turn left
+                    </p>
+
+                    <p>
+                        <strong>S</strong>
+                        Backward
+                    </p>
+
+                    <p>
+                        <strong>D</strong>
+                        Turn right
+                    </p>
+
+                </div>
+
             </div>
 
         </section>
 
-        <section class="control-panel">
-            <h2>Sensor Control</h2>
+
+        <!-- ================================================= -->
+        <!-- SENSOR INFORMATION -->
+        <!-- ================================================= -->
+
+        <section class="sensor-section">
+
+            <div class="section-title">
+
+                <h2>Plant Environment</h2>
+
+                <p>
+                    Current readings obtained from the sensor ESP32.
+                </p>
+
+            </div>
 
 
-            <button id="CaptureData">
-                <span id="buttonText">Capture Data</span>
+            <div class="sensor-grid">
+
+
+                <!-- pH -->
+
+                <div class="sensor-card ph-card">
+
+                    <div class="sensor-icon">
+                        🧪
+                    </div>
+
+                    <div class="sensor-info">
+
+                        <h3>
+                            pH Level
+                        </h3>
+
+                        <p class="sensor-value">
+
+                            <span id="ph">
+                                --
+                            </span>
+
+                        </p>
+
+                        <span class="sensor-unit">
+                            pH
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Temperature -->
+
+                <div class="sensor-card temperature-card">
+
+                    <div class="sensor-icon">
+                        🌡️
+                    </div>
+
+                    <div class="sensor-info">
+
+                        <h3>
+                            Temperature
+                        </h3>
+
+                        <p class="sensor-value">
+
+                            <span id="temperature">
+                                --
+                            </span>
+
+                        </p>
+
+                        <span class="sensor-unit">
+                            °C
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Humidity -->
+
+                <div class="sensor-card humidity-card">
+
+                    <div class="sensor-icon">
+                        💧
+                    </div>
+
+                    <div class="sensor-info">
+
+                        <h3>
+                            Humidity
+                        </h3>
+
+                        <p class="sensor-value">
+
+                            <span id="humidity">
+                                --
+                            </span>
+
+                        </p>
+
+                        <span class="sensor-unit">
+                            %
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Prediction -->
+
+                <div class="sensor-card plant-card">
+
+                    <div class="sensor-icon big-icon">
+                        🌿
+                    </div>
+
+                    <div class="sensor-info">
+
+                        <h3>
+                            Recommended Plant
+                        </h3>
+
+                        <p class="sensor-value prediction-value">
+
+                            <span id="prediction">
+                                --
+                            </span>
+
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ================================================= -->
+        <!-- SENSOR CONTROL -->
+        <!-- ================================================= -->
+
+        <section class="sensor-control-section">
+
+            <div>
+
+                <h2>
+                    Sensor Control
+                </h2>
+
+                <p>
+                    Request a new reading from the plant sensors
+                    and run the ML prediction.
+                </p>
+
+            </div>
+
+
+            <button
+                    id="CaptureData"
+                    class="capture-button"
+            >
+
+                <span id="buttonText">
+                    Capture Data
+                </span>
+
             </button>
+
         </section>
 
     </main>
 
-
 </div>
 
+
 <script src="/js/script.js"></script>
+
 </body>
 </html>
