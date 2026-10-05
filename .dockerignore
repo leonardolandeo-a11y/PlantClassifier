@@ -8,8 +8,6 @@ target
 
 *.iml
 
-MLClassification/venv
-MLClassification/.venv
 
 __pycache__
 *.pyc

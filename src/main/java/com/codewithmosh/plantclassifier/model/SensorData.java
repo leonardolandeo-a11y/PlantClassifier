@@ -23,9 +23,7 @@ public class SensorData {
         this.humidity = humidity;
     }
 
-    public SensorData(){
-
-    }
+    protected SensorData(){}
 
 
 }
