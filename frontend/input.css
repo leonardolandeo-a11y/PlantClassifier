@@ -169,3 +169,102 @@
         @apply cursor-not-allowed opacity-50;
     }
 }
+
+/* =====================================
+   ROBOT MOVEMENT COMPONENTS
+   ===================================== */
+
+@layer components {
+
+    /* Movement section */
+
+    .movement-panel {
+        @apply rounded-2xl border border-slate-700
+               bg-slate-900 p-5 shadow-md
+               sm:p-6;
+    }
+
+    .movement-header {
+        @apply flex flex-col gap-5
+               md:flex-row md:items-start
+               md:justify-between;
+    }
+
+    /* Movement status */
+
+    .movement-status-box {
+        @apply flex flex-col gap-1
+               rounded-xl border border-emerald-800
+               bg-emerald-950 px-5 py-3
+               md:min-w-48;
+    }
+
+    .movement-status-label {
+        @apply text-xs font-medium
+               text-emerald-200;
+    }
+
+    .movement-status-value {
+        @apply text-lg font-bold tracking-wide
+               text-emerald-300;
+    }
+
+    /* Keyboard container */
+
+    .keyboard-panel {
+        @apply mt-6 rounded-xl
+               border border-slate-700
+               bg-slate-950 p-5
+               sm:p-6;
+    }
+
+    .keyboard-title {
+        @apply text-center text-lg
+               font-semibold text-slate-100;
+    }
+
+    /* Keyboard layout */
+
+    .keyboard-layout {
+        @apply mt-5 flex flex-col
+               items-center gap-3;
+    }
+
+    .key-row {
+        @apply flex items-center
+               justify-center gap-3;
+    }
+
+    /* Individual keyboard keys */
+
+    .keyboard-key {
+        @apply flex h-20 w-20 flex-col
+               items-center justify-center gap-1
+               rounded-xl border border-slate-600
+               bg-slate-800 shadow-sm
+               transition-all duration-150
+               sm:w-24;
+    }
+
+    .key-letter {
+        @apply text-2xl font-bold
+               text-slate-100;
+    }
+
+    .key-action {
+        @apply text-xs font-medium
+               text-slate-300;
+    }
+
+    /* Keyboard instructions */
+
+    .movement-help {
+        @apply mt-6 flex flex-wrap
+               justify-center gap-x-6 gap-y-3
+               text-sm text-slate-300;
+    }
+
+    .movement-help strong {
+        @apply font-bold text-emerald-300;
+    }
+}
