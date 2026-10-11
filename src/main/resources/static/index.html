@@ -3,14 +3,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
     <title>Plant Robot Control</title>
 
     <link rel="stylesheet" href="./css/output.css">
 </head>
 
-<body class="min-h-screen bg-slate-950 text-slate-100">
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
 
     <!-- =====================================
          HEADER
@@ -18,15 +19,11 @@
 
     <header class="app-header">
         <div class="page-container header-content">
-            <div>
-                <h1 class="app-title">
-                    🌱 Plant Robot Control
-                </h1>
 
-                <p class="app-subtitle">
-                    Movement, sensors and plant recommendation
-                </p>
-            </div>
+            <h1 class="app-title">
+                🌱 Plant Robot Control
+            </h1>
+
         </div>
     </header>
 
@@ -41,16 +38,9 @@
 
             <div class="movement-header">
 
-                <div>
-                    <h2 id="movement-heading" class="section-title">
-                        Robot Movement
-                    </h2>
-
-                    <p class="section-description">
-                        Control the robot using your keyboard.
-                        Release the key to stop.
-                    </p>
-                </div>
+                <h2 id="movement-heading" class="section-title">
+                    Robot Movement
+                </h2>
 
                 <div class="movement-status-box">
 
@@ -67,24 +57,25 @@
 
             </div>
 
-            <!-- Keyboard controls -->
-
             <div class="keyboard-panel">
 
                 <h3 class="keyboard-title">
                     Keyboard Controls
                 </h3>
 
+                <p class="keyboard-hint">
+                    Hold W, A, S or D to move.
+                    Release to stop.
+                </p>
+
                 <div class="keyboard-layout">
 
                     <!-- W -->
                     <div class="key-row">
-
                         <kbd class="keyboard-key">
                             <span class="key-letter">W</span>
                             <span class="key-action">Forward</span>
                         </kbd>
-
                     </div>
 
                     <!-- A S D -->
@@ -110,23 +101,10 @@
                 </div>
 
                 <div class="movement-help">
-
-                    <p>
-                        <strong>W</strong> — Forward
-                    </p>
-
-                    <p>
-                        <strong>A</strong> — Turn left
-                    </p>
-
-                    <p>
-                        <strong>S</strong> — Backward
-                    </p>
-
-                    <p>
-                        <strong>D</strong> — Turn right
-                    </p>
-
+                    <p><strong>W</strong> — Forward</p>
+                    <p><strong>A</strong> — Turn left</p>
+                    <p><strong>S</strong> — Backward</p>
+                    <p><strong>D</strong> — Turn right</p>
                 </div>
 
             </div>
@@ -144,17 +122,16 @@
                 Environmental Sensors
             </h2>
 
-            <p class="section-description">
-                Real-time environmental measurements
-                from the ESP32.
-            </p>
-
             <div class="sensor-grid">
 
                 <!-- pH -->
-                <article class="sensor-card">
+                <article class="sensor-card sensor-card--ph">
+
+                    <div class="sensor-accent"
+                         aria-hidden="true"></div>
 
                     <div class="sensor-card-header">
+
                         <h3 class="sensor-label">
                             pH Level
                         </h3>
@@ -163,6 +140,7 @@
                               aria-hidden="true">
                             🧪
                         </span>
+
                     </div>
 
                     <p class="sensor-reading">
@@ -170,12 +148,20 @@
                         <span class="sensor-unit">pH</span>
                     </p>
 
+                    <p class="sensor-card-footer">
+                        Acidity / alkalinity
+                    </p>
+
                 </article>
 
                 <!-- Temperature -->
-                <article class="sensor-card">
+                <article class="sensor-card sensor-card--temperature">
+
+                    <div class="sensor-accent"
+                         aria-hidden="true"></div>
 
                     <div class="sensor-card-header">
+
                         <h3 class="sensor-label">
                             Temperature
                         </h3>
@@ -184,6 +170,7 @@
                               aria-hidden="true">
                             🌡️
                         </span>
+
                     </div>
 
                     <p class="sensor-reading">
@@ -191,12 +178,20 @@
                         <span class="sensor-unit">°C</span>
                     </p>
 
+                    <p class="sensor-card-footer">
+                        Temperature in Celsius
+                    </p>
+
                 </article>
 
                 <!-- Humidity -->
-                <article class="sensor-card">
+                <article class="sensor-card sensor-card--humidity">
+
+                    <div class="sensor-accent"
+                         aria-hidden="true"></div>
 
                     <div class="sensor-card-header">
+
                         <h3 class="sensor-label">
                             Humidity
                         </h3>
@@ -205,11 +200,16 @@
                               aria-hidden="true">
                             💧
                         </span>
+
                     </div>
 
                     <p class="sensor-reading">
                         <span id="humidity">--</span>
                         <span class="sensor-unit">%</span>
+                    </p>
+
+                    <p class="sensor-card-footer">
+                        Relative humidity
                     </p>
 
                 </article>
