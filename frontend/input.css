@@ -1,0 +1,171 @@
+
+@import "tailwindcss";
+
+@source "../src/main/resources/static";
+
+/* =================================
+    PLANTCLASSIFIER — DARK THEME
+================================= */
+
+@layer components {
+
+    /* Global layout */
+
+    .page-container {
+        @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+    }
+
+    .dashboard-main {
+        @apply py-10;
+    }
+
+    /* Header */
+
+    .app-header {
+        @apply border-b border-slate-800 bg-slate-900;
+    }
+
+    .header-content {
+        @apply flex items-center gap-4 py-5;
+    }
+
+    .app-title {
+        @apply text-2xl font-bold tracking-tight text-emerald-300;
+    }
+
+
+
+    /* Section headings */
+
+    .section-title {
+        @apply text-3xl font-bold tracking-tight text-slate-100;
+    }
+
+
+    /* Sensor cards */
+
+    .sensor-grid {
+        @apply mt-6 grid grid-cols-1 gap-5
+                sm:grid-cols-2 lg:grid-cols-3;
+    }
+
+    .sensor-card {
+        @apply flex min-h-44 flex-col justify-between
+                rounded-2xl border border-slate-700
+                bg-slate-900 p-6 shadow-md
+                transition-all duration-200;
+    }
+
+    .sensor-card:hover {
+        @apply border-emerald-500 shadow-lg;
+    }
+
+    .sensor-card-header {
+        @apply flex items-center justify-between gap-3;
+    }
+
+    .sensor-label {
+        @apply text-sm font-semibold text-slate-200;
+    }
+
+    .sensor-icon {
+        @apply flex h-12 w-12 items-center justify-center
+                rounded-xl bg-slate-800 text-2xl;
+    }
+
+    .sensor-reading {
+        @apply mt-7 flex items-baseline gap-2
+                text-4xl font-bold tracking-tight text-white;
+    }
+
+    .sensor-unit {
+        @apply text-sm font-medium text-slate-300;
+    }
+
+    /* Plant recommendation */
+
+    .prediction-panel {
+        @apply flex flex-col gap-6
+                rounded-2xl border border-emerald-800
+                bg-emerald-950 p-6 text-white
+                shadow-md
+                md:flex-row md:items-center
+                md:justify-between md:p-8;
+    }
+
+    .prediction-content {
+        @apply flex items-start gap-4;
+    }
+
+    .prediction-icon {
+        @apply flex h-14 w-14 shrink-0
+                items-center justify-center
+                rounded-xl bg-emerald-800/50 text-3xl;
+    }
+
+    .prediction-label {
+        @apply text-xs font-semibold
+                tracking-wider text-emerald-200;
+    }
+
+    .prediction-heading {
+        @apply mt-2 text-3xl font-bold tracking-tight text-white;
+    }
+
+    .prediction-description {
+        @apply mt-2 max-w-lg text-sm
+                leading-6 text-emerald-50;
+    }
+
+    .prediction-result {
+        @apply w-full rounded-xl border border-emerald-700
+                bg-emerald-900/60 p-5
+                md:w-64 md:shrink-0;
+    }
+
+    .prediction-result-label {
+        @apply text-sm font-medium text-emerald-100;
+    }
+
+    .prediction-value {
+        @apply mt-2 break-words text-3xl
+                font-bold text-white;
+    }
+
+    /* Sensor control */
+
+    .control-panel {
+        @apply mt-8 flex flex-col gap-5
+                rounded-2xl border border-slate-700
+                bg-slate-900 p-6 shadow-md
+                md:flex-row md:items-center
+                md:justify-between;
+    }
+
+    .control-title {
+        @apply text-xl font-bold text-slate-100;
+    }
+
+    .control-description {
+        @apply mt-2 text-sm text-slate-300;
+    }
+
+    .capture-button {
+        @apply inline-flex items-center justify-center
+                rounded-xl bg-emerald-500
+                px-7 py-3 font-semibold text-emerald-950
+                cursor-pointer transition-all duration-200;
+    }
+
+    .capture-button:not(:disabled):hover {
+        @apply bg-emerald-400 shadow-lg;
+    }
+
+    .capture-button:focus-visible {
+        @apply outline-2 outline-offset-2 outline-emerald-300;
+    }
+
+    .capture-button:disabled {
+        @apply cursor-not-allowed opacity-50;
+    }
+}

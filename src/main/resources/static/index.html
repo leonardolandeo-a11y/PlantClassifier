@@ -1,85 +1,167 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plant Monitor</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="./css/output.css">
 </head>
-<body>
 
-<div class="dashboard">
+<body class="min-h-screen bg-slate-950 text-slate-100">
 
-    <header class="topbar">
-        <div class="header-left">
-            <h1>🌱 Plant Monitor</h1>
+    <!-- HEADER -->
+    <header class="app-header">
+        <div class="page-container header-content">
+            <div>
+                <h1 class="app-title">
+                    🌱 Plant Monitor
+                </h1>
+
+            </div>
         </div>
-
-
     </header>
 
-    <main>
+    <!-- DASHBOARD -->
+    <main class="page-container dashboard-main">
 
-        <section class="sensor-grid">
+        <!-- ENVIRONMENTAL SENSORS -->
+        <section aria-labelledby="sensor-heading">
 
-            <div class="sensor-card ph-card">
-                <div class="sensor-icon">🧪</div>
-                <div class="sensor-info">
-                    <h2>pH Level</h2>
-                    <p class="sensor-value"><span id="ph">--</span></p>
-                    <span class="sensor-unit">pH</span>
-                </div>
-            </div>
+            <h2 id="sensor-heading" class="section-title">
+                Environmental Sensors
+            </h2>
 
-            <div class="sensor-card temperature-card">
-                <div class="sensor-icon">🌡️</div>
-                <div class="sensor-info">
-                    <h2>Temperature</h2>
-                    <p class="sensor-value"><span id="temperature">--</span></p>
-                    <span class="sensor-unit">°C</span>
-                </div>
-            </div>
 
-            <div class="sensor-card humidity-card">
-                <div class="sensor-icon">💧</div>
-                <div class="sensor-info">
-                    <h2>Humidity</h2>
-                    <p class="sensor-value"><span id="humidity">--</span></p>
-                    <span class="sensor-unit">%</span>
-                </div>
-            </div>
 
-            <div class="sensor-card plant-card large-card">
-                <div class="sensor-icon big-icon">🌿</div>
-                <div class="sensor-info">
-                    <div class="plant-header">
-                        <h2>Recommended Plant</h2>
+            <div class="sensor-grid">
+
+                <!-- pH -->
+                <article class="sensor-card">
+                    <div class="sensor-card-header">
+                        <h3 class="sensor-label">
+                            pH Level
+                        </h3>
+                        <span class="sensor-icon" aria-hidden="true">
+                            🧪
+                        </span>
                     </div>
 
-                    <p class="sensor-value prediction-value">
-                        <span id="prediction">--</span>
+                    <p class="sensor-reading">
+                        <span id="ph">--</span>
+                        <span class="sensor-unit">pH</span>
                     </p>
+                </article>
 
+                <!-- Temperature -->
+                <article class="sensor-card">
+                    <div class="sensor-card-header">
+                        <h3 class="sensor-label">
+                            Temperature
+                        </h3>
+                        <span class="sensor-icon" aria-hidden="true">
+                            🌡️
+                        </span>
+                    </div>
 
-                </div>
+                    <p class="sensor-reading">
+                        <span id="temperature">--</span>
+                        <span class="sensor-unit">°C</span>
+                    </p>
+                </article>
+
+                <!-- Humidity -->
+                <article class="sensor-card">
+                    <div class="sensor-card-header">
+                        <h3 class="sensor-label">
+                            Humidity
+                        </h3>
+                        <span class="sensor-icon" aria-hidden="true">
+                            💧
+                        </span>
+                    </div>
+
+                    <p class="sensor-reading">
+                        <span id="humidity">--</span>
+                        <span class="sensor-unit">%</span>
+                    </p>
+                </article>
+
             </div>
-
         </section>
 
-        <section class="control-panel">
-            <h2>Sensor Control</h2>
+        <!-- PLANT RECOMMENDATION -->
+        <section class="mt-8" aria-labelledby="prediction-heading">
 
+            <article class="prediction-panel">
 
-            <button id="CaptureData">
-                <span id="buttonText">Capture Data</span>
+                <div class="prediction-content">
+
+                    <div class="prediction-icon" aria-hidden="true">
+                        🌿
+                    </div>
+
+                    <div>
+                        <p class="prediction-label">
+                            PLANT RECOMMENDATION
+                        </p>
+
+                        <h2 id="prediction-heading"
+                            class="prediction-heading">
+                            Find the right plant
+                        </h2>
+                    </div>
+
+                </div>
+
+                <div class="prediction-result">
+
+                    <p class="prediction-result-label">
+                        Recommended Plant
+                    </p>
+
+                    <p id="prediction"
+                       class="prediction-value"
+                       aria-live="polite">
+                        --
+                    </p>
+
+                </div>
+
+            </article>
+        </section>
+
+        <!-- SENSOR CONTROL -->
+        <section class="control-panel"
+                 aria-labelledby="control-heading">
+
+            <div>
+                <h2 id="control-heading" class="control-title">
+                    Sensor Control
+                </h2>
+
+                <p class="control-description">
+                    Capture the latest environmental readings
+                    directly from your sensors.
+                </p>
+            </div>
+
+            <button
+                id="CaptureData"
+                type="button"
+                class="capture-button">
+
+                <span id="buttonText">
+                    Capture Data
+                </span>
+
             </button>
+
         </section>
 
     </main>
 
+    <script type="module" src="./js/scripts.js"></script>
 
-</div>
-
-<script src="/js/script.js"></script>
 </body>
 </html>
