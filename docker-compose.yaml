@@ -1,5 +1,8 @@
 services:
 
+  # =========================
+  # 1. POSTGRESQL DATABASE
+  # =========================
   db:
     image: postgres:17-alpine
     container_name: plantclassifier-db
@@ -9,8 +12,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
+    # PostgreSQL is only accessible from the host machine.
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
 
     volumes:
       - plantclassifier_postgres_data:/var/lib/postgresql/data
@@ -21,30 +25,46 @@ services:
       timeout: 5s
       retries: 10
 
+    restart: unless-stopped
 
+  # =========================
+  # 2. SPRING BOOT APPLICATION
+  # =========================
   app:
     build: .
     container_name: plantclassifier-app
 
     environment:
+      # Spring Boot binds inside its container to all network interfaces.
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: 8080
+
+      # PostgreSQL connection over the internal Docker network.
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
 
-      ML_PYTHON_PATH: ${ML_PYTHON_PATH}
-      ML_SCRIPT_PATH: ${ML_SCRIPT_PATH}
-      ML_WORKING_DIRECTORY: ${ML_WORKING_DIRECTORY}
+      # Python virtual environment created in the Dockerfile.
+      ML_PYTHON_PATH: /opt/venv/bin/python3
+      ML_SCRIPT_PATH: ${ML_SCRIPT_PATH:-predict.py}
+      ML_WORKING_DIRECTORY: ${ML_WORKING_DIRECTORY:-MLClassification}
 
+      # ESP32 controllers; their IPs may change between networks.
       ESP32_URL: ${ESP32_URL}
+      MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL}
 
-
+    # Publish the web application on all host IPv4 interfaces by default.
     ports:
-      - "${APP_PORT}:8080"
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-8080}:8080"
 
     depends_on:
       db:
         condition: service_healthy
 
+    restart: unless-stopped
 
+# =========================
+# 3. PERSISTENT VOLUMES
+# =========================
 volumes:
   plantclassifier_postgres_data:

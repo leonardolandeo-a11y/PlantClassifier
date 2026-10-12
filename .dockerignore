@@ -1,13 +1,24 @@
-target
-.idea
-.vscode
-.git
+# Python
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+
+# Java
+target/
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
 .gitignore
 
+# Environment variables
 .env
+.env.*
 
-*.iml
-
-
-__pycache__
-*.pyc
+# Node dependencies
+node_modules/
+**/node_modules/
