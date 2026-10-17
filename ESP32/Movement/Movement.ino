@@ -1,358 +1,322 @@
+// ESP32 + TB6612FNG + Servo + WiFi
+// Basado en el diagnostico SIN WiFi que funciono fisicamente.
+// Requiere ESP32 Arduino Core 3.x, ESP32Servo y ArduinoJson 7.
+// PRIMERAS PRUEBAS: LEVANTAR LAS RUEDAS.
+
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include <ESP32Servo.h>
 
 // ============================================================
-// WIFI CONFIGURATION
+// CONFIGURACION WIFI
 // ============================================================
-
-const char* WIFI_SSID = "YOUR_WIFI_NAME";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WIFI_SSID = "Galaxy A05 6201";
+const char* WIFI_PASSWORD = "contraseña2";
 
 WebServer server(80);
 
 // ============================================================
-// MOTOR PINS
-// CHANGE THESE AFTER WE IDENTIFY YOUR MOTOR DRIVER
+// PINES: EXACTAMENTE LOS DEL TEST QUE FUNCIONO
 // ============================================================
+constexpr int SERVO_PIN = 22;
+constexpr int PWMA = 27;
+constexpr int AIN1 = 25;
+constexpr int AIN2 = 26;
+constexpr int STBY = 32;
 
-// LEFT SIDE
-constexpr int LEFT_IN1 = 25;
-constexpr int LEFT_IN2 = 26;
-constexpr int LEFT_PWM = 27;
+constexpr int PWM_FREQUENCY = 5000;
+constexpr int PWM_RESOLUTION = 8;
+constexpr int DEFAULT_SPEED = 180;
 
-// RIGHT SIDE
-constexpr int RIGHT_IN1 = 32;
-constexpr int RIGHT_IN2 = 33;
-constexpr int RIGHT_PWM = 14;
+constexpr int SERVO_CENTER = 100;
+constexpr int SERVO_LEFT = 70;
+constexpr int SERVO_RIGHT = 130;
 
-// ============================================================
-// SAFETY
-// ============================================================
+constexpr unsigned long COMMAND_TIMEOUT_MS = 1500;
 
+// Dejar 1 SOLO para diagnosticar. Cambiar a 0 cuando termine la prueba.
+#define ENABLE_SELFTEST_ENDPOINT 1
+
+Servo steeringServo;
+bool servoOK = false;
+bool pwmOK = false;
+bool lastPWMWriteOK = false;
+
+int currentAngle = SERVO_CENTER;
+int currentSpeed = 0;
+int driveDirection = 0; // -1 atras, 0 parado, 1 adelante
 unsigned long lastCommandTime = 0;
 
-constexpr unsigned long COMMAND_TIMEOUT = 1500; // milliseconds
-
-bool robotMoving = false;
-
 // ============================================================
-// MOTOR CLASS
+// MOTOR: MISMAS OPERACIONES DIRECTAS QUE EL TEST
 // ============================================================
-
-class Motor {
-
-private:
-    int in1;
-    int in2;
-    int pwmPin;
-
-public:
-
-    Motor(int pin1, int pin2, int pwm)
-        : in1(pin1), in2(pin2), pwmPin(pwm) {}
-
-    void begin() {
-
-        pinMode(in1, OUTPUT);
-        pinMode(in2, OUTPUT);
-
-        // ESP32 Arduino Core 3.x
-        ledcAttach(pwmPin, 20000, 8);
-
-        stop();
-    }
-
-    void forward(int speed) {
-
-        digitalWrite(in1, HIGH);
-        digitalWrite(in2, LOW);
-
-        ledcWrite(pwmPin, speed);
-    }
-
-    void backward(int speed) {
-
-        digitalWrite(in1, LOW);
-        digitalWrite(in2, HIGH);
-
-        ledcWrite(pwmPin, speed);
-    }
-
-    void stop() {
-
-        digitalWrite(in1, LOW);
-        digitalWrite(in2, LOW);
-
-        ledcWrite(pwmPin, 0);
-    }
-};
-
-// ============================================================
-// MOTORS
-// ============================================================
-
-Motor leftMotor(
-    LEFT_IN1,
-    LEFT_IN2,
-    LEFT_PWM
-);
-
-Motor rightMotor(
-    RIGHT_IN1,
-    RIGHT_IN2,
-    RIGHT_PWM
-);
-
-// ============================================================
-// ROBOT MOVEMENT
-// ============================================================
-
-void stopRobot() {
-
-    leftMotor.stop();
-    rightMotor.stop();
-
-    robotMoving = false;
-
-    Serial.println("STOP");
+void motorStop() {
+  if (pwmOK) {
+    lastPWMWriteOK = ledcWrite(PWMA, 0);
+  }
+  digitalWrite(AIN1, LOW);
+  digitalWrite(AIN2, LOW);
+  driveDirection = 0;
+  currentSpeed = 0;
 }
 
-void moveForward(int speed) {
+bool motorDrive(int direction, int speed) {
+  speed = constrain(speed, 0, 255);
 
-    leftMotor.forward(speed);
-    rightMotor.forward(speed);
+  if (!pwmOK) return false;
+  if (direction == 0 || speed == 0) {
+    motorStop();
+    return true;
+  }
 
-    robotMoving = true;
-    lastCommandTime = millis();
+  // No invertir el motor con potencia aplicada.
+  if (driveDirection != 0 && driveDirection != direction) {
+    motorStop();
+    delay(40);
+  }
 
-    Serial.println("FORWARD");
+  digitalWrite(STBY, HIGH);
+  digitalWrite(AIN1, direction > 0 ? HIGH : LOW);
+  digitalWrite(AIN2, direction < 0 ? HIGH : LOW);
+  lastPWMWriteOK = ledcWrite(PWMA, speed);
+
+  if (!lastPWMWriteOK) {
+    motorStop();
+    return false;
+  }
+
+  driveDirection = direction;
+  currentSpeed = speed;
+  return true;
 }
 
-void moveBackward(int speed) {
-
-    leftMotor.backward(speed);
-    rightMotor.backward(speed);
-
-    robotMoving = true;
-    lastCommandTime = millis();
-
-    Serial.println("BACKWARD");
+void servoMove(int angle) {
+  currentAngle = constrain(angle, SERVO_LEFT, SERVO_RIGHT);
+  if (servoOK) steeringServo.write(currentAngle);
 }
 
-void turnLeft(int speed) {
-
-    leftMotor.backward(speed);
-    rightMotor.forward(speed);
-
-    robotMoving = true;
-    lastCommandTime = millis();
-
-    Serial.println("LEFT");
-}
-
-void turnRight(int speed) {
-
-    leftMotor.forward(speed);
-    rightMotor.backward(speed);
-
-    robotMoving = true;
-    lastCommandTime = millis();
-
-    Serial.println("RIGHT");
+void robotStop() {
+  motorStop();
+  servoMove(SERVO_CENTER);
 }
 
 // ============================================================
-// HTTP
+// INICIALIZACION: COPIADA EN EL MISMO ORDEN DEL TEST EXITOSO
 // ============================================================
+void setupHardware() {
+  // 1. PRIMERO EL SERVO (tal como en el test)
+  steeringServo.setPeriodHertz(50);
+  steeringServo.attach(SERVO_PIN, 500, 2400);
+  steeringServo.write(SERVO_CENTER);
+  servoOK = steeringServo.attached();
+  currentAngle = SERVO_CENTER;
+  Serial.printf("[INIT] SERVO attached=%d\n", servoOK);
+
+  // 2. DESPUES TB6612FNG Y PWM (tal como en el test)
+  pinMode(STBY, OUTPUT);
+  pinMode(AIN1, OUTPUT);
+  pinMode(AIN2, OUTPUT);
+  digitalWrite(STBY, LOW);
+  digitalWrite(AIN1, LOW);
+  digitalWrite(AIN2, LOW);
+
+  pwmOK = ledcAttach(PWMA, PWM_FREQUENCY, PWM_RESOLUTION);
+  Serial.printf("[INIT] PWM attached=%d\n", pwmOK);
+
+  if (!pwmOK) {
+    Serial.println("[ERROR] No se pudo configurar el PWM del motor");
+    return; // STBY permanece en LOW
+  }
+
+  motorStop();
+  digitalWrite(STBY, HIGH);
+  Serial.printf("[INIT] STBY=%d, PWM=%lu\n",
+                digitalRead(STBY), (unsigned long)ledcRead(PWMA));
+}
+
+// ============================================================
+// PRUEBA IDENTICA AL TEST QUE SI FUNCIONO (DISPARADA POR HTTP)
+// ============================================================
+void selfTest() {
+  Serial.println("[TEST] Comienza la prueba. RUEDAS LEVANTADAS");
+  robotStop();
+
+  if (servoOK) {
+    Serial.println("[TEST] Servo 130 grados");
+    servoMove(130);
+    delay(1000);
+    Serial.println("[TEST] Servo 70 grados");
+    servoMove(70);
+    delay(1000);
+    servoMove(100);
+    delay(500);
+  }
+
+  if (pwmOK) {
+    Serial.println("[TEST] Motor FORWARD PWM=200 durante 1 s");
+    motorDrive(1, 200);
+    Serial.printf("[TEST] PWM=%lu STBY=%d\n",
+                  (unsigned long)ledcRead(PWMA), digitalRead(STBY));
+    delay(1000);
+    motorStop();
+    delay(500);
+
+    Serial.println("[TEST] Motor BACKWARD PWM=200 durante 1 s");
+    motorDrive(-1, 200);
+    delay(1000);
+    motorStop();
+  }
+
+  robotStop();
+  Serial.println("[TEST] FIN: MOTOR DETENIDO");
+}
+
+// ============================================================
+// RESPUESTAS HTTP
+// ============================================================
+void sendError(int code, const char* message) {
+  JsonDocument doc;
+  doc["error"] = message;
+  String body;
+  serializeJson(doc, body);
+  server.send(code, "application/json", body);
+}
+
+void sendStatus() {
+  JsonDocument doc;
+  doc["status"] = "online";
+  doc["ip"] = WiFi.localIP().toString();
+  doc["moving"] = driveDirection != 0;
+  doc["speed"] = currentSpeed;
+  doc["steeringAngle"] = currentAngle;
+  doc["servoAttached"] = servoOK;
+  doc["pwmAttached"] = pwmOK;
+  doc["lastPwmWriteOk"] = lastPWMWriteOK;
+  doc["pwmDuty"] = pwmOK ? (int)ledcRead(PWMA) : 0;
+  doc["standbyPin"] = digitalRead(STBY);
+  doc["ain1Pin"] = digitalRead(AIN1);
+  doc["ain2Pin"] = digitalRead(AIN2);
+  // Estos campos representan estados internos, NO movimiento medido.
+  String body;
+  serializeJson(doc, body);
+  server.send(200, "application/json", body);
+}
 
 void handleMovement() {
+  if (!server.hasArg("plain")) {
+    sendError(400, "Missing JSON body");
+    return;
+  }
 
-    if (!server.hasArg("plain")) {
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    sendError(400, "Invalid JSON");
+    return;
+  }
 
-        server.send(400,"application/json","{\"error\":\"Missing JSON body\"}");
-        return;
+  String command = doc["command"] | "";
+  command.toUpperCase();
+  int speed = constrain(doc["speed"] | DEFAULT_SPEED, 0, 255);
+
+  if (command == "FORWARD" || command == "BACKWARD") {
+    if (!pwmOK) {
+      sendError(503, "Motor PWM initialization failed");
+      return;
     }
-
-    JsonDocument document;
-
-    DeserializationError error = deserializeJson(document, server.arg("plain"));
-
-    if (error) {
-
-        server.send(400,"application/json","{\"error\":\"Invalid JSON\"}");
-        return;
+    int direction = command == "FORWARD" ? 1 : -1;
+    if (!motorDrive(direction, speed)) {
+      sendError(503, "Motor PWM write failed");
+      return;
     }
-
-    String command = document["command"] | "";
-
-    int speed = document["speed"] | 150;
-
-    speed = constrain(speed, 0, 255);
-
-    command.toUpperCase();
-
-    // --------------------------------------------------------
-    // Execute command
-    // --------------------------------------------------------
-
-    if (command == "FORWARD") {
-
-        moveForward(speed);
-
+  } else if (command == "LEFT" || command == "RIGHT") {
+    if (!servoOK) {
+      sendError(503, "Servo initialization failed");
+      return;
     }
-    else if (command == "BACKWARD") {
+    servoMove(command == "LEFT" ? SERVO_LEFT : SERVO_RIGHT);
+  } else if (command == "CENTER") {
+    servoMove(SERVO_CENTER);
+  } else if (command == "STOP") {
+    robotStop();
+  } else {
+    sendError(400, "Unknown command");
+    return;
+  }
 
-        moveBackward(speed);
+  lastCommandTime = millis();
+  Serial.printf("[CMD] %s speed=%d angle=%d PWM=%lu STBY=%d\n",
+                command.c_str(), currentSpeed, currentAngle,
+                (unsigned long)(pwmOK ? ledcRead(PWMA) : 0),
+                digitalRead(STBY));
 
-    }
-    else if (command == "LEFT") {
-
-        turnLeft(speed);
-
-    }
-    else if (command == "RIGHT") {
-
-        turnRight(speed);
-
-    }
-    else if (command == "STOP") {
-
-        stopRobot();
-
-    }
-    else {
-
-        server.send(400,"application/json","{\"error\":\"Unknown command\"}");
-        return;
-    }
-
-    // --------------------------------------------------------
-    // Response
-    // --------------------------------------------------------
-
-    String response =
-        "{\"status\":\"OK\",\"command\":\""
-        + command
-        + "\",\"speed\":"
-        + String(speed)
-        + "}";
-
-    server.send(
-        200,
-        "application/json",
-        response
-    );
+  JsonDocument result;
+  result["status"] = "OK";
+  result["command"] = command;
+  result["speed"] = currentSpeed;
+  result["angle"] = currentAngle;
+  result["moving"] = driveDirection != 0;
+  result["pwmDuty"] = pwmOK ? (int)ledcRead(PWMA) : 0;
+  String body;
+  serializeJson(result, body);
+  server.send(200, "application/json", body);
 }
 
 // ============================================================
-// STATUS ENDPOINT
+// SETUP / LOOP
 // ============================================================
-
-void handleStatus() {
-
-    String response =
-        "{"
-        "\"status\":\"online\","
-        "\"ip\":\""
-        + WiFi.localIP().toString()
-        + "\""
-        "}";
-
-    server.send(
-        200,
-        "application/json",
-        response
-    );
-}
-
-// ============================================================
-// WIFI
-// ============================================================
-
-void connectWiFi() {
-
-    Serial.println();
-    Serial.print("Connecting to WiFi");
-
-    WiFi.begin(
-        WIFI_SSID,
-        WIFI_PASSWORD
-    );
-
-    while (WiFi.status() != WL_CONNECTED) {
-
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println();
-    Serial.println("WiFi connected!");
-
-    Serial.print("ESP32 IP: ");
-    Serial.println(WiFi.localIP());
-}
-
-// ============================================================
-// SETUP
-// ============================================================
-
 void setup() {
+  Serial.begin(115200);
+  setupHardware(); // ANTES DE INICIAR WIFI
+  robotStop();
 
-    Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("[WIFI] Connecting");
 
-    leftMotor.begin();
-    rightMotor.begin();
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
+    Serial.print(".");
+    delay(400);
+  }
+  Serial.println();
 
-    stopRobot();
+  server.on("/status", HTTP_GET, sendStatus);
+  server.on("/movement", HTTP_POST, handleMovement);
+#if ENABLE_SELFTEST_ENDPOINT
+  server.on("/test", HTTP_POST, []() {
+    selfTest();
+    server.send(200, "application/json", "{\"status\":\"test completed\"}");
+  });
+#endif
+  server.begin();
 
-    connectWiFi();
-
-    // --------------------------------------------------------
-    // API
-    // --------------------------------------------------------
-
-    server.on(
-        "/movement",
-        HTTP_POST,
-        handleMovement
-    );
-
-    server.on(
-        "/status",
-        HTTP_GET,
-        handleStatus
-    );
-
-    server.begin();
-
-    Serial.println();
-    Serial.println("Movement server started");
-    Serial.println("=======================");
-
-    Serial.print("http://");
-    Serial.print(WiFi.localIP());
-    Serial.println("/status");
-
-    Serial.println("=======================");
+  Serial.print("[WIFI] IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println("[HTTP] /status y /movement listos");
+#if ENABLE_SELFTEST_ENDPOINT
+  Serial.println("[HTTP] /test habilitado SOLO para diagnostico");
+#endif
 }
-
-// ============================================================
-// LOOP
-// ============================================================
 
 void loop() {
+  static unsigned long lastReconnectAttempt = 0;
 
+  if (WiFi.status() == WL_CONNECTED) {
     server.handleClient();
-
-    // ========================================================
-    // FAILSAFE
-    // ========================================================
-
-    if (robotMoving && millis() - lastCommandTime > COMMAND_TIMEOUT ) {
-
-        Serial.println("FAILSAFE -> STOP");
-
-        stopRobot();
+  } else {
+    if (driveDirection != 0 || currentAngle != SERVO_CENTER) robotStop();
+    if (millis() - lastReconnectAttempt >= 5000) {
+      lastReconnectAttempt = millis();
+      WiFi.reconnect();
     }
+  }
+
+  if ((driveDirection != 0 || currentAngle != SERVO_CENTER) &&
+      millis() - lastCommandTime > COMMAND_TIMEOUT_MS) {
+    Serial.println("[FAILSAFE] Timeout -> STOP");
+    robotStop();
+  }
+  delay(1);
 }
