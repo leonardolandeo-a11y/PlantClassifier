@@ -1,51 +1,36 @@
-# =========================
-# 1. BUILD SPRING BOOT APP
-# =========================
-FROM eclipse-temurin:21-jdk-noble AS build
-
+FROM node:24-bookworm-slim AS frontend
 WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY frontend ./frontend
+COPY scripts ./scripts
+COPY tsconfig.json ./
+COPY src/main/resources/static/index.html ./src/main/resources/static/index.html
+RUN npm run typecheck && npm test && npm run build
 
+FROM eclipse-temurin:21-jdk-noble AS build
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
-RUN chmod +x mvnw
-RUN ./mvnw dependency:go-offline
-
+RUN chmod +x mvnw && ./mvnw dependency:go-offline
 COPY src ./src
-RUN ./mvnw clean package -DskipTests
+COPY --from=frontend /app/src/main/resources/static ./src/main/resources/static
+# H2 and fake-device tests require no production credentials or hardware.
+RUN ./mvnw -B verify
 
-# =========================
-# 2. RUN APPLICATION
-# =========================
 FROM eclipse-temurin:21-jre-noble
-
 WORKDIR /app
-
-# Install Python via HTTPS Ubuntu repositories.
-# HTTPS helps avoid stale HTTP caches, but network/repository errors may still occur.
-RUN sed -i \
-    -e 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' \
-    -e 's|http://security.ubuntu.com|https://security.ubuntu.com|g' \
-    /etc/apt/sources.list.d/ubuntu.sources \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        python3 \
-        python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-
-# Isolated virtual environment inside Docker (not the laptop's .venv).
-RUN python3 -m venv /opt/venv
+    && python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
-
-# Install Python dependencies independently of ML source changes.
 COPY MLClassification/requirements.txt ./MLClassification/requirements.txt
 RUN python -m pip install --no-cache-dir -r MLClassification/requirements.txt
-
-# Copy scripts and model.pkl, but never the local .venv (see .dockerignore).
-COPY MLClassification/ ./MLClassification/
-
+COPY MLClassification/predict.py MLClassification/features.py MLClassification/model.pkl ./MLClassification/
+RUN python MLClassification/predict.py 25 60 7
 COPY --from=build /app/target/*.jar ./app.jar
-
+RUN useradd --system --uid 10001 app
+USER 10001
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
