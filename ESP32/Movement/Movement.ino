@@ -11,10 +11,11 @@
 // ============================================================
 // CONFIGURACION WIFI
 // ============================================================
-const char* WIFI_SSID = "Galaxy A05 6201";
-const char* WIFI_PASSWORD = "contraseña2";
+
+
 
 WebServer server(80);
+#include "control_protocol.h"
 
 // ============================================================
 // PINES: EXACTAMENTE LOS DEL TEST QUE FUNCIONO
@@ -36,7 +37,9 @@ constexpr int SERVO_RIGHT = 130;
 constexpr unsigned long COMMAND_TIMEOUT_MS = 1500;
 
 // Dejar 1 SOLO para diagnosticar. Cambiar a 0 cuando termine la prueba.
-#define ENABLE_SELFTEST_ENDPOINT 1
+#ifndef ENABLE_SELFTEST_ENDPOINT
+#define ENABLE_SELFTEST_ENDPOINT 0
+#endif
 
 Servo steeringServo;
 bool servoOK = false;
@@ -136,40 +139,17 @@ void setupHardware() {
 }
 
 // ============================================================
-// PRUEBA IDENTICA AL TEST QUE SI FUNCIONO (DISPARADA POR HTTP)
+// DIAGNOSTICO ACOTADO Y NO BLOQUEANTE (DISPARADO POR HTTP)
 // ============================================================
-void selfTest() {
-  Serial.println("[TEST] Comienza la prueba. RUEDAS LEVANTADAS");
+bool diagnosticRunning = false;
+uint32_t diagnosticDeadline = 0;
+bool selfTest() {
   robotStop();
-
-  if (servoOK) {
-    Serial.println("[TEST] Servo 130 grados");
-    servoMove(130);
-    delay(1000);
-    Serial.println("[TEST] Servo 70 grados");
-    servoMove(70);
-    delay(1000);
-    servoMove(100);
-    delay(500);
-  }
-
-  if (pwmOK) {
-    Serial.println("[TEST] Motor FORWARD PWM=200 durante 1 s");
-    motorDrive(1, 200);
-    Serial.printf("[TEST] PWM=%lu STBY=%d\n",
-                  (unsigned long)ledcRead(PWMA), digitalRead(STBY));
-    delay(1000);
-    motorStop();
-    delay(500);
-
-    Serial.println("[TEST] Motor BACKWARD PWM=200 durante 1 s");
-    motorDrive(-1, 200);
-    delay(1000);
-    motorStop();
-  }
-
-  robotStop();
-  Serial.println("[TEST] FIN: MOTOR DETENIDO");
+  diagnosticRunning = motorDrive(1, 200);
+  lastCommandTime = millis();
+  diagnosticDeadline = lastCommandTime + 1000;
+  Serial.println("[TEST] Commanded forward PWM for at most 1 s; physical movement is not measured");
+  return diagnosticRunning;
 }
 
 // ============================================================
@@ -187,7 +167,7 @@ void sendStatus() {
   JsonDocument doc;
   doc["status"] = "online";
   doc["ip"] = WiFi.localIP().toString();
-  doc["moving"] = driveDirection != 0;
+  doc["commandedMoving"] = driveDirection != 0;
   doc["speed"] = currentSpeed;
   doc["steeringAngle"] = currentAngle;
   doc["servoAttached"] = servoOK;
@@ -204,38 +184,34 @@ void sendStatus() {
 }
 
 void handleMovement() {
-  if (!server.hasArg("plain")) {
-    sendError(400, "Missing JSON body");
-    return;
-  }
-
   JsonDocument doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    sendError(400, "Invalid JSON");
-    return;
-  }
-
-  String command = doc["command"] | "";
-  command.toUpperCase();
-  int speed = constrain(doc["speed"] | DEFAULT_SPEED, 0, 255);
+  String command;
+  int speed;
+  if (!readCommand(doc, command, speed)) return;
+  diagnosticRunning = false;
 
   if (command == "FORWARD" || command == "BACKWARD") {
     if (!pwmOK) {
+      robotStop(); gate.invalidate();
       sendError(503, "Motor PWM initialization failed");
       return;
     }
     int direction = command == "FORWARD" ? 1 : -1;
     if (!motorDrive(direction, speed)) {
+      robotStop(); gate.invalidate();
       sendError(503, "Motor PWM write failed");
       return;
     }
   } else if (command == "LEFT" || command == "RIGHT") {
     if (!servoOK) {
+      robotStop(); gate.invalidate();
       sendError(503, "Servo initialization failed");
       return;
     }
+    motorStop(); // Steering-only commands must not leave earlier propulsion running.
     servoMove(command == "LEFT" ? SERVO_LEFT : SERVO_RIGHT);
   } else if (command == "CENTER") {
+    motorStop();
     servoMove(SERVO_CENTER);
   } else if (command == "STOP") {
     robotStop();
@@ -252,10 +228,13 @@ void handleMovement() {
 
   JsonDocument result;
   result["status"] = "OK";
+  result["simulated"] = false;
+  result["sessionId"] = controllerSession;
+  result["sequence"] = doc["sequence"].as<uint32_t>();
   result["command"] = command;
   result["speed"] = currentSpeed;
   result["angle"] = currentAngle;
-  result["moving"] = driveDirection != 0;
+  result["commandedMoving"] = driveDirection != 0;
   result["pwmDuty"] = pwmOK ? (int)ledcRead(PWMA) : 0;
   String body;
   serializeJson(result, body);
@@ -282,12 +261,24 @@ void setup() {
   }
   Serial.println();
 
-  server.on("/status", HTTP_GET, sendStatus);
+  configureControl();
+  server.on("/status", HTTP_GET, []() { if (authorized()) sendStatus(); });
   server.on("/movement", HTTP_POST, handleMovement);
 #if ENABLE_SELFTEST_ENDPOINT
   server.on("/test", HTTP_POST, []() {
-    selfTest();
-    server.send(200, "application/json", "{\"status\":\"test completed\"}");
+    JsonDocument doc;
+    String command;
+    int speed;
+    if (!readCommand(doc, command, speed)) return;
+    if (command != "FORWARD" || speed != 200) {
+      robotStop(); gate.invalidate();
+      protocolError(400, "Diagnostic requires FORWARD at speed 200"); return;
+    }
+    if (!selfTest()) {
+      robotStop(); gate.invalidate();
+      protocolError(503, "Diagnostic PWM command failed"); return;
+    }
+    server.send(200, "application/json", "{\"status\":\"test commanded\"}");
   });
 #endif
   server.begin();
@@ -318,5 +309,13 @@ void loop() {
     Serial.println("[FAILSAFE] Timeout -> STOP");
     robotStop();
   }
+  if (diagnosticRunning) {
+    if (WiFi.status() != WL_CONNECTED || int32_t(millis() - diagnosticDeadline) >= 0) {
+      diagnosticRunning = false;
+      gate.invalidate();
+      robotStop();
+    }
+  }
+  checkControlSafety();
   delay(1);
 }

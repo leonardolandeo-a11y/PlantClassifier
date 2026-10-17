@@ -1,70 +1,49 @@
 services:
-
-  # =========================
-  # 1. POSTGRESQL DATABASE
-  # =========================
   db:
     image: postgres:17-alpine
-    container_name: plantclassifier-db
-
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-    # PostgreSQL is only accessible from the host machine.
+      POSTGRES_DB: ${POSTGRES_DB:-plantclassifier}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
-
     volumes:
       - plantclassifier_postgres_data:/var/lib/postgresql/data
-
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
-
     restart: unless-stopped
-
-  # =========================
-  # 2. SPRING BOOT APPLICATION
-  # =========================
   app:
     build: .
-    container_name: plantclassifier-app
-
     environment:
-      # Spring Boot binds inside its container to all network interfaces.
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: 8080
-
-      # PostgreSQL connection over the internal Docker network.
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-
-      # Python virtual environment created in the Dockerfile.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-plantclassifier}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?Set POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      CONTROL_USERNAME: ${CONTROL_USERNAME:?Set CONTROL_USERNAME}
+      CONTROL_PASSWORD: ${CONTROL_PASSWORD:?Set CONTROL_PASSWORD}
+      DEVICE_TOKEN: ${DEVICE_TOKEN:?Set DEVICE_TOKEN}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       ML_PYTHON_PATH: /opt/venv/bin/python3
-      ML_SCRIPT_PATH: ${ML_SCRIPT_PATH:-predict.py}
-      ML_WORKING_DIRECTORY: ${ML_WORKING_DIRECTORY:-MLClassification}
-
-      # ESP32 controllers; their IPs may change between networks.
-      ESP32_URL: ${ESP32_URL:-http://127.0.0.1}
-      MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL:-http://127.0.0.1}
-
-    # Publish the web application on all host IPv4 interfaces by default.
+      ML_SCRIPT_PATH: predict.py
+      ML_WORKING_DIRECTORY: /app/MLClassification
+      ML_TIMEOUT: ${ML_TIMEOUT:-30s}
+      ESP32_URL: ${ESP32_URL:?Set the sensor ESP32 address}
+      MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL:?Set the movement ESP32 address}
+      ESP32_CONNECT_TIMEOUT: ${ESP32_CONNECT_TIMEOUT:-2s}
+      ESP32_READ_TIMEOUT: ${ESP32_READ_TIMEOUT:-5s}
+      MOVEMENT_CONNECT_TIMEOUT: ${MOVEMENT_CONNECT_TIMEOUT:-300ms}
+      MOVEMENT_READ_TIMEOUT: ${MOVEMENT_READ_TIMEOUT:-500ms}
+      SENSOR_TEMPERATURE_MIN: ${SENSOR_TEMPERATURE_MIN:--40}
+      SENSOR_TEMPERATURE_MAX: ${SENSOR_TEMPERATURE_MAX:-85}
     ports:
-      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-8080}:8080"
-
+      - "${APP_HOST:-127.0.0.1}:${APP_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
-
     restart: unless-stopped
-
-# =========================
-# 3. PERSISTENT VOLUMES
-# =========================
 volumes:
   plantclassifier_postgres_data:

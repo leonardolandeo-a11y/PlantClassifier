@@ -1,7 +1,9 @@
 
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 
-@source "../src/main/resources/static";
+@source "../src/main/resources/static/index.html";
+@source "./scripts.ts";
+@source "./control.ts";
 
 /* =====================================
    PLANTCLASSIFIER — DARK THEME

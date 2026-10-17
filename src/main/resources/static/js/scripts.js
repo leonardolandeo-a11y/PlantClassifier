@@ -1,196 +1,130 @@
-"use strict";
-/* =====================================
-   INTERFACES AND TYPES
-   ===================================== */
-/* =====================================
-   DOM ELEMENTS
-   ===================================== */
+import { KeyboardState, MovementControl } from "./control.js";
 function required(selector) {
     const element = document.querySelector(selector);
-    if (!element) {
-        throw new Error(`Element not found: ${selector}`);
-    }
+    if (!element)
+        throw new Error(`Missing element: ${selector}`);
     return element;
 }
-const ph = required("#ph");
-const temperature = required("#temperature");
-const humidity = required("#humidity");
-const prediction = required("#prediction");
 const captureButton = required("#CaptureData");
 const buttonText = required("#buttonText");
-// Optional because this element may not exist in the HTML yet
-const movementStatus = document.querySelector("#movementStatus");
-/* =====================================
-   UPDATE SENSOR DATA
-   ===================================== */
-function updateSensorData(data) {
-    ph.textContent = String(data.ph);
-    temperature.textContent = String(data.temperature);
-    humidity.textContent = String(data.humidity);
-}
-function updateSensorDataResult(data) {
-    updateSensorData(data);
-    prediction.textContent = data.prediction;
-}
-/* =====================================
-   GET — LOAD LATEST SENSOR DATA
-   ===================================== */
-async function loadSensorData() {
+const prediction = required("#prediction");
+const movementStatus = required("#movementStatus");
+const sensorStatus = required("#sensorStatus");
+let csrf;
+async function request(url, body, mutation = false) {
+    if (mutation && !csrf) {
+        const response = await fetch("/csrf", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Unable to initialize session protection");
+        csrf = await response.json();
+    }
+    const headers = {};
+    if (csrf && mutation)
+        headers[csrf.headerName] = csrf.token;
+    if (body !== undefined)
+        headers["Content-Type"] = "application/json";
+    let response;
     try {
-        const response = await fetch("/sensors");
-        if (!response.ok) {
-            throw new Error(`Sensor request failed: ${response.status}`);
+        response = await fetch(url, { method: mutation ? "POST" : "GET", headers,
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: AbortSignal.timeout(url.startsWith("/movement") ? 1200 : 35000),
+            keepalive: url === "/movement" && body?.command === "STOP" });
+    }
+    catch {
+        throw new Error("Network failure or request timeout — device state unconfirmed");
+    }
+    if (!response.ok) {
+        if (response.status === 401)
+            throw new Error("Sign in to control the robot or capture sensors");
+        if (response.status === 403) {
+            csrf = undefined;
+            throw new Error("Session protection expired; reload the page");
         }
-        const data = await response.json();
-        updateSensorData(data);
+        if (response.status === 409)
+            throw new Error("Command rejected: control expired or superseded");
+        if (response.status === 504)
+            throw new Error("Device timed out");
+        if (response.status === 502)
+            throw new Error("Device unreachable or invalid response");
+        throw new Error(`Request failed (${response.status})`);
+    }
+    return response.status === 204 ? null : await response.json();
+}
+function update(data) {
+    required("#ph").textContent = data.ph.toFixed(2);
+    required("#temperature").textContent = data.temperature.toFixed(1);
+    required("#humidity").textContent = data.humidity.toFixed(1);
+    prediction.textContent = data.predictionStatus === "SUCCEEDED" ? data.prediction :
+        `Measurement saved — prediction ${data.predictionStatus.toLowerCase()}${data.predictionError ? ` (${data.predictionError})` : ""}`;
+    sensorStatus.textContent = `${data.simulated === null ? "Origin unknown" : data.simulated ? "Simulated measurements" : "Sensor measurements"} · ${data.capturedAt ? new Date(data.capturedAt).toLocaleString() : "Legacy time unknown"}`;
+}
+async function load() {
+    try {
+        const data = await request("/sensors");
+        if (data)
+            update(data);
+        else
+            sensorStatus.textContent = "No measurements yet";
     }
     catch (error) {
-        console.error("Error loading sensor data:", error);
+        sensorStatus.textContent = error instanceof Error ? error.message : "Unable to load sensors";
     }
 }
-/* =====================================
-   POST — CAPTURE SENSOR DATA
-   ===================================== */
-async function captureSensorData() {
-    captureButton.disabled = true;
-    buttonText.textContent = "Capturing...";
-    try {
-        const response = await fetch("/sensors/capture", {
-            method: "POST"
-        });
-        if (!response.ok) {
-            throw new Error(`Capture request failed: ${response.status}`);
-        }
-        const data = await response.json();
-        console.log("Captured data:", data);
-        updateSensorDataResult(data);
-    }
-    catch (error) {
-        console.error("Error capturing sensor data:", error);
-    }
-    finally {
-        captureButton.disabled = false;
-        buttonText.textContent = "Capture Data";
-    }
-}
-/* =====================================
-   ROBOT MOVEMENT CONFIGURATION
-   ===================================== */
-const MOVEMENT_SPEED = 150;
-const COMMAND_INTERVAL = 500;
-let currentCommand = "STOP";
-let movementInterval = null;
-/* =====================================
-   POST — SEND MOVEMENT COMMAND
-   ===================================== */
-async function sendMovementCommand(command) {
-    const request = {
-        command,
-        speed: MOVEMENT_SPEED
-    };
-    try {
-        const response = await fetch("/movement", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(request)
-        });
-        if (!response.ok) {
-            throw new Error(`Movement request failed: ${response.status}`);
-        }
-        if (movementStatus) {
-            movementStatus.textContent = command;
-        }
-        console.log(`Movement command sent: ${command}`);
-    }
-    catch (error) {
-        console.error("Movement error:", error);
-    }
-}
-/* =====================================
-   START MOVEMENT
-   ===================================== */
-function startMovement(command) {
-    if (currentCommand === command) {
-        return;
-    }
-    // Clear any previous movement interval
-    if (movementInterval !== null) {
-        clearInterval(movementInterval);
-    }
-    currentCommand = command;
-    // Send command immediately
-    void sendMovementCommand(command);
-    // Repeat while the key remains pressed
-    movementInterval = setInterval(() => {
-        void sendMovementCommand(command);
-    }, COMMAND_INTERVAL);
-}
-/* =====================================
-   STOP MOVEMENT
-   ===================================== */
-function stopMovement() {
-    if (currentCommand === "STOP") {
-        return;
-    }
-    if (movementInterval !== null) {
-        clearInterval(movementInterval);
-        movementInterval = null;
-    }
-    currentCommand = "STOP";
-    void sendMovementCommand("STOP");
-}
-/* =====================================
-   KEYBOARD CONTROL
-
-   W = Forward
-   S = Backward
-   A = Left
-   D = Right
-   ===================================== */
-document.addEventListener("keydown", (event) => {
-    // Ignore repeated keyboard events
-    if (event.repeat) {
-        return;
-    }
-    const key = event.key.toLowerCase();
-    switch (key) {
-        case "w":
-            startMovement("FORWARD");
-            break;
-        case "s":
-            startMovement("BACKWARD");
-            break;
-        case "a":
-            startMovement("LEFT");
-            break;
-        case "d":
-            startMovement("RIGHT");
-            break;
-    }
-});
-/* =====================================
-   STOP WHEN KEY IS RELEASED
-   ===================================== */
-document.addEventListener("keyup", (event) => {
-    const key = event.key.toLowerCase();
-    if (key === "w" || key === "a" || key === "s" || key === "d") {
-        stopMovement();
-    }
-});
-/* =====================================
-   STOP WHEN WINDOW LOSES FOCUS
-   ===================================== */
-window.addEventListener("blur", () => {
-    stopMovement();
-});
-/* =====================================
-   INITIALIZATION
-   ===================================== */
-// Load sensor data when the page opens
-void loadSensorData();
-// Capture sensor data when the button is clicked
 captureButton.addEventListener("click", () => {
-    void captureSensorData();
+    captureButton.disabled = true;
+    buttonText.textContent = "Capturing…";
+    void request("/sensors/capture", undefined, true).then(data => { if (data)
+        update(data); })
+        .catch((error) => { sensorStatus.textContent = error.message; })
+        .finally(() => { captureButton.disabled = false; buttonText.textContent = "Capture Data"; });
 });
+const keys = new KeyboardState();
+const control = new MovementControl({
+    async acquire() {
+        const result = await request("/movement/session", undefined, true);
+        if (!result)
+            throw new Error("Empty controller response");
+        return result;
+    },
+    async send(body) {
+        const ack = await request("/movement", body, true);
+        if (!ack || ack.status !== "OK" || ack.sessionId !== body.sessionId || ack.sequence !== body.sequence)
+            throw new Error("Invalid device acknowledgement");
+        return ack;
+    }
+}, message => { movementStatus.textContent = message; }, () => keys.clear());
+const acquireButton = required("#AcquireControl");
+acquireButton.addEventListener("click", () => {
+    keys.clear();
+    acquireButton.disabled = true;
+    void control.acquire().finally(() => { acquireButton.disabled = false; });
+});
+function stop() { keys.clear(); control.stop(); }
+required("#StopMovement").addEventListener("click", stop);
+function typing(target) {
+    return target instanceof HTMLElement && (target.isContentEditable || !!target.closest("input, textarea, select"));
+}
+document.addEventListener("keydown", event => {
+    if (typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
+        return;
+    const key = event.key.toLowerCase();
+    if (!["w", "a", "s", "d"].includes(key))
+        return;
+    event.preventDefault();
+    keys.press(key);
+    control.set(keys.command());
+});
+document.addEventListener("keyup", event => {
+    const key = event.key.toLowerCase();
+    if (!keys.pressedKeys.has(key))
+        return;
+    keys.release(key);
+    control.set(keys.command());
+});
+window.addEventListener("blur", stop);
+window.addEventListener("pagehide", stop);
+document.addEventListener("visibilitychange", () => { if (document.hidden)
+    stop(); });
+document.addEventListener("focusin", event => { if (typing(event.target))
+    stop(); });
+void load();

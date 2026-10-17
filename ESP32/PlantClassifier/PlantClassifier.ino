@@ -7,10 +7,9 @@
 // WIFI CONFIGURATION
 // ============================================================
 
-#define WIFI_SSID "YOUR_WIFI_NAME"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
 WebServer server(80);
+#include "control_protocol.h"
 
 // ============================================================
 // SENSOR CONFIGURATION
@@ -23,6 +22,11 @@ WebServer server(80);
 #define TEMPPIN 35
 
 DHT dht(DHTPIN, DHTTYPE);
+String simulatedCommand = "STOP";
+void robotStop() { simulatedCommand = "STOP"; }
+#ifndef REAL_SENSOR_MODE
+#define REAL_SENSOR_MODE 0
+#endif
 
 // ============================================================
 // SENSOR DATA
@@ -47,8 +51,22 @@ String getSensorJSON() {
         ) / 2.0
     );
 
+#if REAL_SENSOR_MODE
+    // Real pH requires a calibrated analog interface. Values are supplied in local wifi_config.h.
+#ifndef PH_ADC_AT_7
+#error "Calibrate PH_ADC_AT_7 and PH_ADC_AT_4 before enabling real sensor mode"
+#endif
+#ifndef PH_ADC_AT_4
+#error "Calibrate PH_ADC_AT_4 before enabling real sensor mode"
+#endif
+    temperature = dht.readTemperature();
+    humidity = dht.readHumidity();
+    ph = 7.0f + (rawPH - PH_ADC_AT_7) * (4.0f - 7.0f) / (PH_ADC_AT_4 - PH_ADC_AT_7);
+    if (!isfinite(temperature) || !isfinite(humidity) || !isfinite(ph) || ph < 0 || ph > 14 ||
+        humidity < 0 || humidity > 100) return "";
+#endif
     JsonDocument doc;
-
+    doc["simulated"] = !REAL_SENSOR_MODE;
     doc["ph"] = ph;
     doc["temperature"] = temperature;
     doc["humidity"] = humidity;
@@ -65,7 +83,9 @@ String getSensorJSON() {
 
 void captureData() {
 
+    if (!authorized()) return;
     String json = getSensorJSON();
+    if (json.isEmpty()) { protocolError(503, "Sensor read failed or pH calibration invalid"); return; }
 
     Serial.println();
     Serial.println("========== SENSOR CAPTURE ==========");
@@ -86,57 +106,11 @@ void captureData() {
 
 void handleMovement() {
 
-    if (!server.hasArg("plain")) {
-
-        server.send(
-            400,
-            "application/json",
-            "{\"error\":\"Missing JSON body\"}"
-        );
-
-        return;
-    }
-
     JsonDocument doc;
-
-    DeserializationError error =
-        deserializeJson(doc, server.arg("plain"));
-
-    if (error) {
-
-        server.send(
-            400,
-            "application/json",
-            "{\"error\":\"Invalid JSON\"}"
-        );
-
-        return;
-    }
-
-    String command = doc["command"] | "";
-    int speed = doc["speed"] | 150;
-
-    command.toUpperCase();
-    speed = constrain(speed, 0, 255);
-
-    // Validate command
-    if (
-        command != "FORWARD" &&
-        command != "BACKWARD" &&
-        command != "LEFT" &&
-        command != "RIGHT" &&
-        command != "CENTER" &&
-        command != "STOP"
-    ) {
-
-        server.send(
-            400,
-            "application/json",
-            "{\"error\":\"Unknown command\"}"
-        );
-
-        return;
-    }
+    String command;
+    int speed;
+    if (!readCommand(doc, command, speed)) return;
+    simulatedCommand = command;
 
     // ========================================================
     // PRINT COMMAND TO SERIAL MONITOR
@@ -152,22 +126,22 @@ void handleMovement() {
     Serial.println(speed);
 
     if (command == "FORWARD") {
-        Serial.println("ACTION: Moving forward");
+        Serial.println("SIMULATION commanded: forward");
     }
     else if (command == "BACKWARD") {
-        Serial.println("ACTION: Moving backward");
+        Serial.println("SIMULATION commanded: backward");
     }
     else if (command == "LEFT") {
-        Serial.println("ACTION: Turning left");
+        Serial.println("SIMULATION commanded steering: left");
     }
     else if (command == "RIGHT") {
-        Serial.println("ACTION: Turning right");
+        Serial.println("SIMULATION commanded steering: right");
     }
     else if (command == "CENTER") {
-        Serial.println("ACTION: Centering steering");
+        Serial.println("SIMULATION commanded: Centering steering");
     }
     else if (command == "STOP") {
-        Serial.println("ACTION: Stopping robot");
+        Serial.println("SIMULATION commanded: Stopping robot");
     }
 
     Serial.println("======================================");
@@ -179,8 +153,10 @@ void handleMovement() {
     JsonDocument response;
 
     response["status"] = "OK";
+    response["sessionId"] = controllerSession;
+    response["sequence"] = doc["sequence"].as<uint32_t>();
     response["command"] = command;
-    response["speed"] = speed;
+    response["speed"] = command == "STOP" ? 0 : speed;
     response["simulated"] = true;
 
     String jsonResponse;
@@ -198,6 +174,7 @@ void handleMovement() {
 // ============================================================
 
 void handleStatus() {
+    if (!authorized()) return;
 
     JsonDocument response;
 
@@ -227,6 +204,7 @@ void setup() {
 
     // WiFi
     WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     Serial.print("Connecting to WiFi");
@@ -242,6 +220,7 @@ void setup() {
     Serial.print("ESP32 IP: ");
     Serial.println(WiFi.localIP());
 
+    configureControl();
     // HTTP endpoints
     server.on("/capture", HTTP_GET, captureData);
 
@@ -264,5 +243,6 @@ void setup() {
 
 void loop() {
 
-    server.handleClient();
+    checkControlSafety();
+    if (WiFi.status() == WL_CONNECTED) server.handleClient();
 }

@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build:ts && npm run build:css",
+    "build:ts": "tsc",
+    "build:css": "tailwindcss -i frontend/input.css -o src/main/resources/static/css/output.css --minify",
+    "watch": "node scripts/watch.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build:ts && node frontend/control.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -13,7 +18,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/leonardolandeo-a11y/PlantClassifier/issues"
   },

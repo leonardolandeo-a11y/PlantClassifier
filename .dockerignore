@@ -22,3 +22,13 @@ target/
 # Node dependencies
 node_modules/
 **/node_modules/
+ESP32/
+.git/
+docs/
+
+.aws/
+.codex/
+.agents/
+**/.env
+**/.env.*
+**/wifi_config.h

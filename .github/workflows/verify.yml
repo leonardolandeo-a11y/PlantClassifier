@@ -1,0 +1,46 @@
+name: Verify system
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: MLClassification/requirements.txt
+      - run: npm ci
+      - run: npm run typecheck && npm test && npm run build
+      - name: Generated frontend matches source
+        run: git diff --exit-code -- src/main/resources/static/js src/main/resources/static/css
+      - run: ./mvnw -B verify
+      - run: scripts/test-postgres.sh
+      - run: scripts/test-firmware.sh
+      - run: pip install -r MLClassification/requirements.txt
+      - name: Python syntax, imports, prediction and evaluation
+        run: |
+          python -m py_compile MLClassification/features.py MLClassification/predict.py MLClassification/train.py
+          python -c 'import sklearn, pandas, numpy, joblib'
+          python MLClassification/predict.py 25 60 7
+          python MLClassification/train.py --report /tmp/evaluation.json
+          python -m unittest discover -s MLClassification -p 'test_*.py'
+      - run: python scripts/check-secrets.py
+      - run: docker compose --env-file .env.example config --quiet
+      - run: docker build -t plantclassifier:ci .
+      - name: End-to-end smoke with disposable PostgreSQL and fake ESP32
+        run: PLANT_TEST_IMAGE=plantclassifier:ci python scripts/smoke-docker.py

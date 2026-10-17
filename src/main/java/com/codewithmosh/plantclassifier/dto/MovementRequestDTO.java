@@ -1,26 +1,13 @@
 package com.codewithmosh.plantclassifier.dto;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.validation.constraints.*;
 
-@AllArgsConstructor
-@Getter
-@Setter
-@NoArgsConstructor
-public class MovementRequestDTO {
-
-    @NotBlank
-    @Pattern(regexp = "(?i)^(FORWARD|BACKWARD|LEFT|RIGHT|CENTER|STOP)$", message = "Unsupported movement command")
-    private String command;
-    @NotNull
-    @Min(0)
-    @Max(255)
-    private Integer speed;
+public record MovementRequestDTO(
+        @NotBlank @Pattern(regexp = "(?i)(FORWARD|BACKWARD|LEFT|RIGHT|CENTER|STOP)") String command,
+        @NotNull @Min(0) @Max(255) Integer speed,
+        @NotBlank @Pattern(regexp = "[0-9a-f]{32}") String sessionId,
+        @NotNull @Min(1) @Max(2147483647) Long sequence) {
+    public MovementRequestDTO {
+        if (command != null) command = command.toUpperCase(java.util.Locale.ROOT);
+    }
 }
