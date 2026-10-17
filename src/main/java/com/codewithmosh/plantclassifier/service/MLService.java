@@ -8,6 +8,9 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class MLService {
@@ -23,6 +26,9 @@ public class MLService {
     // MLClassification directory
     @Value("${ml.working-directory}")
     private String workingDirectory;
+
+    @Value("${ml.timeout:30s}")
+    private Duration timeout;
 
 
     public String predict(double temperature, double humidity, double ph) throws IOException, InterruptedException {
@@ -42,28 +48,29 @@ public class MLService {
                 new File(workingDirectory)
         );
 
-        // Merge Python errors with the normal output
-        processBuilder.redirectErrorStream(true);
+        // Keep diagnostics off stdout so the prediction remains the first output line.
+        processBuilder.redirectErrorStream(false);
 
         // Execute the Python file
         Process process = processBuilder.start();
 
         // Convert Python output into characters
         // BufferedReader allows Java to read the Python output
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-
-        // Read the prediction returned by Python
-        String prediction = reader.readLine();
-
-        // Wait until Python finishes
-        int exitCode = process.waitFor();
-
-        // If Python finishes with an error
-        if (exitCode != 0) {
-            throw new MLExecutionException("ML prediction process failed");
+        try (var processOutput = process.getInputStream();
+             var reader = new BufferedReader(new InputStreamReader(processOutput, StandardCharsets.UTF_8))) {
+            String prediction = reader.readLine();
+            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+                process.waitFor();
+                throw new MLExecutionException("ML prediction process timed out");
+            }
+            if (process.exitValue() != 0) {
+                throw new MLExecutionException("ML prediction process failed");
+            }
+            if (prediction == null || prediction.isBlank()) {
+                throw new MLExecutionException("ML prediction process returned no prediction");
+            }
+            return prediction;
         }
-
-        // Return the output of the ML model
-        return prediction;
     }
 }

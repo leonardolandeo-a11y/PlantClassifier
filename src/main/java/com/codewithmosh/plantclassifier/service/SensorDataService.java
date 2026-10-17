@@ -6,6 +6,8 @@ import com.codewithmosh.plantclassifier.repository.SensorDataRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import java.time.Duration;
 
 import java.io.IOException;
 import java.util.List;
@@ -50,7 +52,10 @@ public class SensorDataService {
     public Map<String, Object> captureData() throws IOException, InterruptedException {
 
         // Connection with the ESP32 server
-        RestClient restClient = RestClient.create();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(2));
+        requestFactory.setReadTimeout(Duration.ofSeconds(5));
+        RestClient restClient = RestClient.builder().requestFactory(requestFactory).build();
 
         // Get sensor data from ESP32
         SensorData data = restClient.get()

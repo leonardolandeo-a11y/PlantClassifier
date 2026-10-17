@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.io.IOException;
+import org.springframework.web.client.RestClientException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -26,6 +27,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InterruptedException.class)
     public ProblemDetail handleInterruptedException(InterruptedException exception) {
+        Thread.currentThread().interrupt();
 
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
 
@@ -40,8 +42,16 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
 
         problem.setTitle("ML Prediction Error");
-        problem.setDetail(exception.getMessage());
+        problem.setDetail("The machine learning prediction could not be completed.");
 
+        return problem;
+    }
+
+    @ExceptionHandler(RestClientException.class)
+    public ProblemDetail handleHttpClientException(RestClientException exception) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_GATEWAY);
+        problem.setTitle("Device communication error");
+        problem.setDetail("The configured device did not complete the request.");
         return problem;
     }
 }
