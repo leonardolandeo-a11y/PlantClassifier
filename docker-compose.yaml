@@ -50,8 +50,8 @@ services:
       ML_WORKING_DIRECTORY: ${ML_WORKING_DIRECTORY:-MLClassification}
 
       # ESP32 controllers; their IPs may change between networks.
-      ESP32_URL: ${ESP32_URL}
-      MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL}
+      ESP32_URL: ${ESP32_URL:-http://127.0.0.1}
+      MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL:-http://127.0.0.1}
 
     # Publish the web application on all host IPv4 interfaces by default.
     ports:
