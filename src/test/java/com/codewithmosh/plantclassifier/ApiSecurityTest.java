@@ -62,4 +62,9 @@ class ApiSecurityTest {
         when(movement.acquire(any())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L));
         mvc.perform(post("/movement/session").session(session).with(csrf())).andExpect(status().isOk());
     }
+    @Test void unsupportedMethodsKeepTheirHttpStatus() throws Exception {
+        mvc.perform(get("/movement").with(user("operator").roles("OPERATOR")))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+    }
 }

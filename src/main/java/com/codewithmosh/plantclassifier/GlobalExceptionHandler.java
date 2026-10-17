@@ -45,6 +45,9 @@ public class GlobalExceptionHandler {
     }
     @ExceptionHandler(Exception.class)
     ProblemDetail unexpected(Exception ex) {
+        if (ex instanceof org.springframework.web.ErrorResponse response) {
+            return problem(response.getStatusCode().value(), "http-request", "Request could not be handled");
+        }
         log.error("Unexpected request failure: {}", ex.getClass().getSimpleName());
         return problem(500, "internal", "The request could not be completed");
     }
