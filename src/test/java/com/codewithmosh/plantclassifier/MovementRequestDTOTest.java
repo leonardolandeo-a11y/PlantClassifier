@@ -2,29 +2,22 @@ package com.codewithmosh.plantclassifier;
 
 import com.codewithmosh.plantclassifier.dto.MovementRequestDTO;
 import jakarta.validation.Validation;
-import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class MovementRequestDTOTest {
-    private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
-
-    @Test
-    void acceptsSupportedCommandAndSpeedBounds() {
-        assertTrue(validator.validate(new MovementRequestDTO("FORWARD", 0)).isEmpty());
-        assertTrue(validator.validate(new MovementRequestDTO("STOP", 255)).isEmpty());
-    }
-
-    @Test
-    void rejectsUnknownCommandAndOutOfRangeSpeed() {
-        var violations = validator.validate(new MovementRequestDTO("FORWARD;STOP", 256));
-        assertEquals(2, violations.size());
-    }
-
-    @Test
-    void acceptsFirmwareCaseInsensitiveCommands() {
-        assertTrue(validator.validate(new MovementRequestDTO("left", 100)).isEmpty());
+    @Test void validatesAllCommandsBoundsAndMissingFields() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            var validator = factory.getValidator();
+            String id = "a".repeat(32);
+            for (String command : new String[]{"forward", "BACKWARD", "LEFT", "RIGHT", "CENTER", "STOP"}) {
+                for (int speed : new int[]{0,255}) assertTrue(validator.validate(new MovementRequestDTO(command,speed,id,1L)).isEmpty());
+            }
+            assertEquals("FORWARD",new MovementRequestDTO("forward",0,id,1L).command());
+            for (var request : new MovementRequestDTO[]{
+                    new MovementRequestDTO("BAD",150,id,1L),new MovementRequestDTO("STOP",-1,id,1L),
+                    new MovementRequestDTO("STOP",256,id,1L),new MovementRequestDTO(null,null,null,null),
+                    new MovementRequestDTO("STOP",0,id,0L)}) assertFalse(validator.validate(request).isEmpty());
+        }
     }
 }

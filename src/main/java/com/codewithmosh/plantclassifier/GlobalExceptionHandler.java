@@ -1,58 +1,51 @@
 package com.codewithmosh.plantclassifier;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
-import com.codewithmosh.plantclassifier.exception.MLExecutionException;
 
-
-
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.io.IOException;
-import org.springframework.web.client.RestClientException;
+import com.codewithmosh.plantclassifier.exception.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.*;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.*;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpTimeoutException;
+import java.net.URI;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-    @ExceptionHandler(IOException.class)
-    public ProblemDetail handleIOException(IOException exception) {
-
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-
-        problem.setTitle("ML Service Error");
-        problem.setDetail("An error occurred while executing the machine learning model.");
-
-        return problem;
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    static ProblemDetail problem(int status, String category, String message) {
+        var detail = ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(status), message);
+        detail.setType(URI.create("urn:plantclassifier:" + category));
+        return detail;
     }
-
-    @ExceptionHandler(InterruptedException.class)
-    public ProblemDetail handleInterruptedException(InterruptedException exception) {
-        Thread.currentThread().interrupt();
-
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-
-        problem.setTitle("ML Process Interrupted");
-        problem.setDetail("The machine learning process was interrupted.");
-
-        return problem;
-    }
-    @ExceptionHandler(MLExecutionException.class)
-    public ProblemDetail handleMLExecutionException(MLExecutionException exception) {
-
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-
-        problem.setTitle("ML Prediction Error");
-        problem.setDetail("The machine learning prediction could not be completed.");
-
-        return problem;
-    }
-
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    ProblemDetail invalid(Exception ex) { return problem(400, "invalid-request", "Invalid request fields or JSON"); }
+    @ExceptionHandler(SystemFailure.class)
+    ProblemDetail failure(SystemFailure ex) { return problem(ex.status(), ex.category(), ex.getMessage()); }
     @ExceptionHandler(RestClientException.class)
-    public ProblemDetail handleHttpClientException(RestClientException exception) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_GATEWAY);
-        problem.setTitle("Device communication error");
-        problem.setDetail("The configured device did not complete the request.");
-        return problem;
+    ProblemDetail device(RestClientException ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SocketTimeoutException || cause instanceof HttpTimeoutException) {
+                return problem(504, "device-timeout", "Device request timed out; commanded state is unknown");
+            }
+        }
+        if (ex instanceof HttpClientErrorException conflict && conflict.getStatusCode().value() == 409) {
+            return problem(409, "device-rejected", "Device rejected stale or expired control; acquire a new session");
+        }
+        log.warn("Device communication failed: {}", ex.getClass().getSimpleName());
+        return problem(502, "device-communication", "Device unreachable or request rejected");
+    }
+    @ExceptionHandler(DataAccessException.class)
+    ProblemDetail database(DataAccessException ex) {
+        log.error("Persistence failed: {}", ex.getClass().getSimpleName());
+        return problem(503, "persistence", "Measurement could not be stored; retry when the database is available");
+    }
+    @ExceptionHandler(Exception.class)
+    ProblemDetail unexpected(Exception ex) {
+        log.error("Unexpected request failure: {}", ex.getClass().getSimpleName());
+        return problem(500, "internal", "The request could not be completed");
     }
 }
-

@@ -1,84 +1,66 @@
 package com.codewithmosh.plantclassifier.service;
 
+import com.codewithmosh.plantclassifier.dto.*;
 import com.codewithmosh.plantclassifier.model.SensorData;
 import com.codewithmosh.plantclassifier.repository.SensorDataRepository;
-
-import org.springframework.beans.factory.annotation.Value;
+import com.codewithmosh.plantclassifier.exception.SystemFailure;
+import org.springframework.beans.factory.annotation.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import java.time.Duration;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class SensorDataService {
+    private final SensorDataRepository repository;
+    private final MLService ml;
+    private final RestClient client;
+    private final double minTemperature;
+    private final double maxTemperature;
+    private final Semaphore capacity = new Semaphore(2);
 
-    private final SensorDataRepository sensorDataRepository;
-    private final MLService mlService;
-
-    @Value("${esp32.url}")
-    private String esp32Url;
-
-
-    public SensorDataService(
-            SensorDataRepository sensorDataRepository,
-            MLService mlService
-    ) {
-        this.sensorDataRepository = sensorDataRepository;
-        this.mlService = mlService;
+    public SensorDataService(SensorDataRepository repository, MLService ml,
+                             @Qualifier("sensorClient") RestClient client,
+                             @Value("${sensor.temperature-min}") double minTemperature,
+                             @Value("${sensor.temperature-max}") double maxTemperature) {
+        if (!Double.isFinite(minTemperature) || !Double.isFinite(maxTemperature) || minTemperature > maxTemperature)
+            throw new IllegalArgumentException("Invalid temperature range");
+        this.repository = repository; this.ml = ml; this.client = client;
+        this.minTemperature = minTemperature; this.maxTemperature = maxTemperature;
     }
-
-
-    public SensorData saveSensorData(SensorData data) {
-        return sensorDataRepository.save(data);
+    public Optional<CaptureResponse> getLatestSensorData() {
+        return repository.findTopByOrderByIdDesc().map(CaptureResponse::from);
     }
-
-
-    public SensorData getLatestSensorData() {
-
-        List<SensorData> data = sensorDataRepository.findAll();
-
-        if (data.isEmpty()) {
-            return null;
-        }
-
-        return data.get(data.size() - 1);
+    private static boolean inRange(Double value, double min, double max) {
+        return value != null && Double.isFinite(value) && value >= min && value <= max;
     }
-
-
-    public Map<String, Object> captureData() throws IOException, InterruptedException {
-
-        // Connection with the ESP32 server
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(2));
-        requestFactory.setReadTimeout(Duration.ofSeconds(5));
-        RestClient restClient = RestClient.builder().requestFactory(requestFactory).build();
-
-        // Get sensor data from ESP32
-        SensorData data = restClient.get()
-                .uri(esp32Url + "/capture")
-                .retrieve()
-                .body(SensorData.class);
-
-        // Save sensor data in PostgreSQL
-        saveSensorData(data);
-
-        // Send sensor data to the ML model
-        String prediction = mlService.predict(
-                data.getTemperature(),
-                data.getHumidity(),
-                data.getPh()
-        );
-
-        // Return sensor data + prediction
-        return Map.of(
-                "ph", data.getPh(),
-                "temperature", data.getTemperature(),
-                "humidity", data.getHumidity(),
-                "prediction", prediction
-        );
+    public CaptureResponse captureData() {
+        if (!capacity.tryAcquire()) throw new SystemFailure(503, "capture-busy", "Capture capacity is busy");
+        try {
+            var json = DeviceResponse.read(client.get().uri("/capture"));
+            SensorReading reading = new SensorReading(DeviceResponse.number(json, "ph"),
+                    DeviceResponse.number(json, "temperature"), DeviceResponse.number(json, "humidity"),
+                    DeviceResponse.bool(json, "simulated"));
+            if (reading == null || !inRange(reading.ph(), 0, 14) || !inRange(reading.humidity(), 0, 100)
+                    || !inRange(reading.temperature(), minTemperature, maxTemperature) || reading.simulated() == null) {
+                throw new SystemFailure(502, "sensor-data", "Device returned incomplete or invalid sensor readings");
+            }
+            SensorData data = new SensorData();
+            data.setPh(reading.ph()); data.setTemperature(reading.temperature()); data.setHumidity(reading.humidity());
+            data.setCapturedAt(Instant.now()); data.setSimulated(reading.simulated());
+            data.setPredictionStatus("PENDING");
+            // This commit is independent of prediction. Do not wrap this method in a database transaction.
+            data = repository.saveAndFlush(data);
+            try {
+                data.setPrediction(ml.predict(data.getTemperature(), data.getHumidity(), data.getPh()));
+                data.setPredictionStatus("SUCCEEDED");
+            } catch (SystemFailure ex) {
+                data.setPredictionStatus("FAILED");
+                data.setPredictionError(ex.category());
+            }
+            // If this write fails, the first persisted measurement remains PENDING for troubleshooting.
+            return CaptureResponse.from(repository.saveAndFlush(data));
+        } finally { capacity.release(); }
     }
 }
