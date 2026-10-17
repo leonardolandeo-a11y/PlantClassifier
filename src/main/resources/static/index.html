@@ -48,7 +48,7 @@
                         Current Movement
                     </span>
 
-                    <span id="movementStatus"
+                    <span id="movementStatus" role="status" aria-live="polite"
                           class="movement-status-value">
                         STOP
                     </span>
@@ -65,9 +65,12 @@
 
                 <p class="keyboard-hint">
                     Hold W, A, S or D to move.
-                    Release to stop.
+                    Last pressed key wins; release resumes a remaining key. Steering-only commands stop propulsion.
                 </p>
 
+                <p><a href="/login">Sign in</a> to use the controls.</p>
+                <button type="button" id="AcquireControl" class="capture-button">Acquire control</button>
+                <button type="button" id="StopMovement" class="capture-button">STOP</button>
                 <div class="keyboard-layout">
 
                     <!-- W -->
@@ -122,6 +125,7 @@
                 Environmental Sensors
             </h2>
 
+            <p id="sensorStatus" role="status" aria-live="polite"></p>
             <div class="sensor-grid">
 
                 <!-- pH -->
