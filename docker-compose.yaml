@@ -41,6 +41,12 @@ services:
       SENSOR_TEMPERATURE_MAX: ${SENSOR_TEMPERATURE_MAX:-85}
     ports:
       - "${APP_HOST:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/session', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     depends_on:
       db:
         condition: service_healthy

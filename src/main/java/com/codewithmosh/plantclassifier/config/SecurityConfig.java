@@ -31,12 +31,17 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain security(HttpSecurity http) throws Exception {
+    SecurityFilterChain security(HttpSecurity http, com.codewithmosh.plantclassifier.service.MovementService movement) throws Exception {
         http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/csrf", "/login", "/error").permitAll()
+                .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/csrf", "/session", "/login", "/error").permitAll()
                 .anyRequest().hasRole("OPERATOR"))
-            .formLogin(form -> form.defaultSuccessUrl("/", true))
-            .logout(logout -> logout.logoutSuccessUrl("/"))
+            .formLogin(form -> form.loginPage("/login").loginProcessingUrl("/login")
+                    .failureUrl("/login?error").defaultSuccessUrl("/", true).permitAll())
+            .requestCache(cache -> cache.disable())
+            .logout(logout -> logout.addLogoutHandler((req, res, auth) -> {
+                var session = req.getSession(false);
+                if (session != null) movement.release(session.getId());
+            }).invalidateHttpSession(true).clearAuthentication(true).deleteCookies("JSESSIONID").logoutSuccessUrl("/"))
             .exceptionHandling(errors -> errors
                 .authenticationEntryPoint((req, res, ex) -> problem(res, 401))
                 .accessDeniedHandler((req, res, ex) -> problem(res,

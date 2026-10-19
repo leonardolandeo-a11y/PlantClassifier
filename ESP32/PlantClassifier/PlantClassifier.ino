@@ -1,7 +1,14 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <WebServer.h>
+#include "wifi_config.h"
+#include "simulation_config.h"
+#if !SIMULATION_MODE
+#error "PlantClassifier sketch supports simulated movement only; use Movement for real actuators"
+#endif
+#if !SENSOR_SIMULATION_MODE
 #include <DHT.h>
+#endif
 
 // ============================================================
 // WIFI CONFIGURATION
@@ -10,6 +17,7 @@
 
 WebServer server(80);
 #include "control_protocol.h"
+#include "simulated_capture.h"
 
 // ============================================================
 // SENSOR CONFIGURATION
@@ -21,12 +29,11 @@ WebServer server(80);
 #define PHPIN 34
 #define TEMPPIN 35
 
+#if !SENSOR_SIMULATION_MODE
 DHT dht(DHTPIN, DHTTYPE);
+#endif
 String simulatedCommand = "STOP";
 void robotStop() { simulatedCommand = "STOP"; }
-#ifndef REAL_SENSOR_MODE
-#define REAL_SENSOR_MODE 0
-#endif
 
 // ============================================================
 // SENSOR DATA
@@ -34,24 +41,11 @@ void robotStop() { simulatedCommand = "STOP"; }
 
 String getSensorJSON() {
 
-    float rawTemperature = analogRead(TEMPPIN);
+#if SENSOR_SIMULATION_MODE
+    return "{\"ph\":6.5,\"temperature\":25.0,\"humidity\":60.0,\"simulated\":true}";
+#else
     float rawPH = analogRead(PHPIN);
-
-    float ph = round((rawPH / 4095.0) * 14.0);
-
-    // Simulated sensor values
-    float temperature = round(
-        (rawTemperature / 4095.0) * 35.0
-    );
-
-    float humidity = round(
-        (
-            (rawTemperature / 4095.0) * 100.0 +
-            (rawPH / 4095.0) * 100.0
-        ) / 2.0
-    );
-
-#if REAL_SENSOR_MODE
+    float temperature, humidity, ph;
     // Real pH requires a calibrated analog interface. Values are supplied in local wifi_config.h.
 #ifndef PH_ADC_AT_7
 #error "Calibrate PH_ADC_AT_7 and PH_ADC_AT_4 before enabling real sensor mode"
@@ -59,14 +53,14 @@ String getSensorJSON() {
 #ifndef PH_ADC_AT_4
 #error "Calibrate PH_ADC_AT_4 before enabling real sensor mode"
 #endif
+    static_assert(PH_ADC_AT_4 != PH_ADC_AT_7, "pH calibration points must differ");
     temperature = dht.readTemperature();
     humidity = dht.readHumidity();
     ph = 7.0f + (rawPH - PH_ADC_AT_7) * (4.0f - 7.0f) / (PH_ADC_AT_4 - PH_ADC_AT_7);
     if (!isfinite(temperature) || !isfinite(humidity) || !isfinite(ph) || ph < 0 || ph > 14 ||
-        humidity < 0 || humidity > 100) return "";
-#endif
+        humidity < 0 || humidity > 100 || temperature < -40 || temperature > 85) return "";
     JsonDocument doc;
-    doc["simulated"] = !REAL_SENSOR_MODE;
+    doc["simulated"] = false;
     doc["ph"] = ph;
     doc["temperature"] = temperature;
     doc["humidity"] = humidity;
@@ -75,6 +69,7 @@ String getSensorJSON() {
     serializeJson(doc, json);
 
     return json;
+#endif
 }
 
 // ============================================================
@@ -84,6 +79,9 @@ String getSensorJSON() {
 void captureData() {
 
     if (!authorized()) return;
+#if SENSOR_SIMULATION_MODE
+    simulatedCapture(); return;
+#endif
     String json = getSensorJSON();
     if (json.isEmpty()) { protocolError(503, "Sensor read failed or pH calibration invalid"); return; }
 
@@ -156,7 +154,7 @@ void handleMovement() {
     response["sessionId"] = controllerSession;
     response["sequence"] = doc["sequence"].as<uint32_t>();
     response["command"] = command;
-    response["speed"] = command == "STOP" ? 0 : speed;
+    response["speed"] = (command == "FORWARD" || command == "BACKWARD") ? speed : 0;
     response["simulated"] = true;
 
     String jsonResponse;
@@ -181,6 +179,11 @@ void handleStatus() {
     response["status"] = "online";
     response["ip"] = WiFi.localIP().toString();
     response["mode"] = "simulation";
+    response["simulated"] = true;
+    response["hardwareOutputEnabled"] = false;
+    response["sensorSimulated"] = bool(SENSOR_SIMULATION_MODE);
+    response["controlActive"] = gate.active;
+    response["command"] = simulatedCommand;
 
     String json;
     serializeJson(response, json);
@@ -200,7 +203,10 @@ void setup() {
 
     Serial.begin(115200);
 
+    Serial.println("[MODE] SIMULATION - HARDWARE OUTPUT DISABLED");
+#if !SENSOR_SIMULATION_MODE
     dht.begin();
+#endif
 
     // WiFi
     WiFi.mode(WIFI_STA);
@@ -209,15 +215,16 @@ void setup() {
 
     Serial.print("Connecting to WiFi");
 
-    while (WiFi.status() != WL_CONNECTED) {
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
         delay(500);
         Serial.print(".");
     }
 
     Serial.println();
-    Serial.println("WiFi connected!");
+    if (WiFi.status() == WL_CONNECTED) Serial.println("[WIFI] Connected");
 
-    Serial.print("ESP32 IP: ");
+    Serial.print("[WIFI] IP: ");
     Serial.println(WiFi.localIP());
 
     configureControl();
@@ -230,7 +237,7 @@ void setup() {
 
     server.begin();
 
-    Serial.println("HTTP Server Started!");
+    Serial.println("[HTTP] Server started");
     Serial.println("Available endpoints:");
     Serial.println("GET  /capture");
     Serial.println("POST /movement");
@@ -244,5 +251,8 @@ void setup() {
 void loop() {
 
     checkControlSafety();
+    static unsigned long lastReconnect = 0;
     if (WiFi.status() == WL_CONNECTED) server.handleClient();
+    else if (millis() - lastReconnect >= 5000) { lastReconnect = millis(); WiFi.reconnect(); }
+    delay(1);
 }

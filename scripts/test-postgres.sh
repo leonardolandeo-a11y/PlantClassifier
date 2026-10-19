@@ -14,4 +14,8 @@ port=$(docker port "$container" 5432 | sed 's/.*://')
 export PLANT_TEST_DB_URL="jdbc:postgresql://127.0.0.1:$port/plant_test"
 export PLANT_TEST_DB_USER=plant_test
 export PLANT_TEST_DB_PASSWORD=isolated_test_only
-./mvnw -B -Dtest=PostgresMigrationTest test
+if (( $# )); then
+  ./mvnw "$@"
+else
+  ./mvnw -B -Dtest=PostgresMigrationTest test
+fi

@@ -38,6 +38,20 @@ public class MovementService {
         return session;
     }
 
+    /** Logout closes the owner's device epoch, even when a browser has lost its local state. */
+    public void release(String owner) {
+        MovementRequestDTO stop;
+        synchronized (this) {
+            if (active == null || !Objects.equals(this.owner, owner)) return;
+            stop = new MovementRequestDTO("STOP", 0, active.sessionId(), sequence + 1);
+        }
+        try { sendCommand(stop, owner); }
+        catch (RuntimeException ex) {
+            // Authentication logout must always complete. Firmware's independent watchdog remains active.
+            synchronized (this) { if (Objects.equals(this.owner, owner)) active = null; }
+        }
+    }
+
     public MovementAck sendCommand(MovementRequestDTO request, String owner) {
         final long deadline;
         synchronized (this) {

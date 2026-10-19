@@ -67,4 +67,42 @@ class ApiSecurityTest {
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
     }
+    @Test void loginPageIsDarkAndContainsRealCsrfForm() throws Exception {
+        mvc.perform(get("/login")).andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"_csrf\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/css/output.css")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("action=\"/login\"")));
+    }
+    @Test void invalidCredentialsAndMissingCsrfCannotLogin() throws Exception {
+        mvc.perform(post("/login").with(csrf()).param("username","test-operator").param("password","incorrect"))
+                .andExpect(redirectedUrl("/login?error"));
+        mvc.perform(post("/login").param("username","test-operator").param("password","local-test-password-only"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/login?error")).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Invalid username or password")));
+        mvc.perform(get("/session")).andExpect(jsonPath("$.authenticated").value(false));
+    }
+    @Test void loginRotatesSessionAndLogoutInvalidatesIt() throws Exception {
+        var anonymous = new org.springframework.mock.web.MockHttpSession();
+        String oldId = anonymous.getId();
+        var login = mvc.perform(post("/login").session(anonymous).with(csrf()).param("username","test-operator")
+                .param("password","local-test-password-only")).andExpect(redirectedUrl("/")).andReturn();
+        var session = (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
+        org.junit.jupiter.api.Assertions.assertNotEquals(oldId, session.getId());
+        mvc.perform(get("/session").session(session)).andExpect(jsonPath("$.authenticated").value(true))
+                .andExpect(jsonPath("$.username").value("test-operator"));
+        mvc.perform(post("/logout").session(session)).andExpect(status().isForbidden());
+        String owner = session.getId();
+        mvc.perform(post("/logout").session(session).with(csrf())).andExpect(redirectedUrl("/"));
+        org.junit.jupiter.api.Assertions.assertTrue(session.isInvalid());
+        verify(movement).release(owner);
+        mvc.perform(post("/sensors/capture").with(csrf())).andExpect(status().isUnauthorized());
+    }
+    @Test void publicDashboardAssetsAndProtectedReadStatus() throws Exception {
+        mvc.perform(get("/")).andExpect(status().isOk());
+        mvc.perform(get("/js/scripts.js")).andExpect(status().isOk());
+        mvc.perform(get("/sensors")).andExpect(status().isUnauthorized());
+    }
+
 }

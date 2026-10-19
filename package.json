@@ -9,7 +9,8 @@
     "build:css": "tailwindcss -i frontend/input.css -o src/main/resources/static/css/output.css --minify",
     "watch": "node scripts/watch.cjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build:ts && node frontend/control.test.mjs"
+    "test": "npm run build:ts && node frontend/control.test.mjs",
+    "test:e2e": "node scripts/browser-e2e.mjs"
   },
   "repository": {
     "type": "git",
@@ -25,6 +26,7 @@
   "homepage": "https://github.com/leonardolandeo-a11y/PlantClassifier#readme",
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }

@@ -1,0 +1,18 @@
+# Add after docker-compose.simulation.yaml to exercise independent device addresses.
+services:
+  sensor-simulator:
+    image: plantclassifier-lab-app
+    entrypoint: ["python", "/simulator/esp32-simulator.py", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      DEVICE_TOKEN: ${DEVICE_TOKEN:?Set DEVICE_TOKEN}
+    volumes:
+      - ./scripts/esp32-simulator.py:/simulator/esp32-simulator.py:ro
+    ports:
+      - "127.0.0.1:18082:8081"
+    restart: unless-stopped
+  app:
+    environment:
+      ESP32_URL: http://sensor-simulator:8081
+    depends_on:
+      sensor-simulator:
+        condition: service_started

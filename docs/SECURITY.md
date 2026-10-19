@@ -21,7 +21,7 @@ Rotation is necessary even if history is cleaned. After rotating, repository own
 
 ## Trust model and remaining limits
 
-Spring uses a single configured OPERATOR account, BCrypt password hashing, an HttpOnly same-site session cookie, and default Spring Security CSRF protection. The browser obtains a session-bound CSRF token from `/csrf`; it never receives the backend device token. Authorization applies to movement/session acquisition and sensor APIs. `/login` is the standard Spring Security form; static assets remain public.
+Spring uses a single configured OPERATOR account, BCrypt password hashing, an HttpOnly same-site session cookie, and default Spring Security CSRF protection. The browser obtains a session-bound CSRF token from `/csrf`; it never receives the backend device token. Authorization applies to movement/session acquisition and sensor APIs. `/login` serves an explicit dark native form with a CSRF token; Spring Security processes the login and rotates the session. CSRF-protected logout attempts STOP and invalidates the session; static assets remain public.
 
 The ESP32 requires `X-Device-Token` on control acquisition, movement, diagnostics, status and capture. Token comparison avoids early content-dependent exits. The physical `/test` route is absent unless explicitly enabled. No CORS permission is granted.
 

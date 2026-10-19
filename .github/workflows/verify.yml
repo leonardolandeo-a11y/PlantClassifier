@@ -31,6 +31,7 @@ jobs:
       - run: ./mvnw -B verify
       - run: scripts/test-postgres.sh
       - run: scripts/test-firmware.sh
+      - run: python scripts/test-simulator.py
       - run: pip install -r MLClassification/requirements.txt
       - name: Python syntax, imports, prediction and evaluation
         run: |

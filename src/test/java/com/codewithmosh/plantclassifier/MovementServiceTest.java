@@ -57,4 +57,13 @@ class MovementServiceTest {
         acquire(); server.expect(requestTo("http://robot.test/movement")).andRespond(withSuccess());
         assertEquals(502,assertThrows(SystemFailure.class,()->service.sendCommand(new MovementRequestDTO("STOP",0,id,1L),"owner")).status());
     }
+    @Test void logoutStopsOnlyTheOwningSession() {
+        acquire(); service.release("other");
+        server.expect(requestTo("http://robot.test/movement"))
+                .andExpect(content().json("{\"command\":\"STOP\",\"speed\":0}"))
+                .andRespond(withSuccess("{\"status\":\"OK\",\"command\":\"STOP\",\"speed\":0,\"simulated\":true,\"sessionId\":\""+id+"\",\"sequence\":1}", MediaType.APPLICATION_JSON));
+        service.release("owner"); server.verify();
+        assertThrows(SystemFailure.class, () -> service.sendCommand(new MovementRequestDTO("FORWARD",150,id,2L),"owner"));
+    }
+
 }

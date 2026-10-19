@@ -1,60 +1,70 @@
-# Verification record
+# Final implementation verification — 2026-10-18
 
-This record distinguishes executed automated checks from physical validation. Final backend run: **30 tests, 0 failures, 0 errors, 0 skipped**, with the disposable PostgreSQL configuration enabled. Hardware results are never inferred from mocks.
+Software implementation and integration validation completed in the existing `plantclassifier-lab` environment. **Physical ESP32 validation is not complete.** Unrestricted Arduino CLI discovery returned `detected_ports: []`; no `/dev/ttyUSB*` or `/dev/ttyACM*` device was visible. Authenticated, read-only `/status` checks against the two device URLs configured in `.env.lab` failed to connect. No firmware was uploaded and no actual serial output was captured.
 
-## Executed checks
+## Tests actually executed and passed
 
-- Maven compilation, unit tests, full Spring context, actual form login/session/CSRF tests, real local HTTP delay/timeout tests, sensor persistence and bounded Python subprocess tests.
-- PostgreSQL 17: fresh schema initialization, explicit legacy baseline, preservation of an existing measurement and sequence value. Tests use isolated temporary schemas in an ephemeral container; no user volumes are mounted.
-- TypeScript type checking, four keyboard/control state tests, production JS/CSS generation.
-- Pure C++ firmware command gate: duplicate/stale sequences, STOP invalidation, deadline expiry, watchdog, epoch invalidation and `millis()` rollover. Both sketch copies are checked for equality.
-- Python syntax/imports, deployed-model prediction, three pipeline unit tests, held-out model evaluation repeated with identical metrics/confusion matrix.
-- Original-model compression experiment with exact prediction equality on 200 sampled rows. Original model SHA-256 remains `7554a7b1c458d6d1f0306eb3fb6316cbc916b4ff861d04bff0770dd3475d1f73`.
-- Compose configuration validation with the example configuration (no secret values printed), Docker image build including Java/frontend tests and real model loading.
-- Docker end-to-end smoke passed with a fresh disposable PostgreSQL instance and token-protected fake ESP32: actual login/CSRF, anonymous rejection, STOP acknowledgement, real deployed-model prediction, saved timestamp/provenance and latest-reading query. The script cleans up its own containers.
-- Current-source credential guard, manual historical credential review, and `git diff --check`.
+| Check | Actual result | Evidence retained locally |
+|---|---|---|
+| Java 21 `./mvnw -B verify` | Passed; initial run skipped the two opt-in PostgreSQL tests | `/tmp/plant-final-maven.log` |
+| Full Maven verification with disposable PostgreSQL: `scripts/test-postgres.sh -B verify` | **35 tests, 0 failures, 0 errors, 0 skipped** | `/tmp/plant-final-full-verify.log` |
+| Standalone PostgreSQL migrations | 2 passed: fresh schema and preservation of legacy rows/sequence | `/tmp/plant-final-postgres.log` |
+| `npm run typecheck` | Passed | Terminal execution |
+| `npm test` | **6 tests passed** | Terminal execution |
+| `npm run build` | TypeScript and Tailwind passed; tracked assets regenerated | Terminal execution |
+| `scripts/test-firmware.sh` | C++ gate tests, matching shared headers, rejection of simulation plus physical self-test | Terminal execution |
+| ESP32 simulation compilation | Both sketches compiled for `esp32:esp32:esp32`, core **3.3.11** | `/tmp/plant-final-firmware.log` |
+| Simulation output safety | Compiled sketch objects have no GPIO/PWM/servo/ADC/DHT I/O references | Same firmware log |
+| Future hardware branches | Movement hardware and PlantClassifier real-sensor branches compile; never flashed | Same firmware log |
+| Software ESP32 HTTP protocol | Tokens, status, six commands, repeats, invalid sequences, deadlines, STOP, watchdog, synthetic ranges passed | `/tmp/plant-final-simulator.log` |
+| Lab device conformance | Passed against the running authenticated simulator, executed independently | `/tmp/plant-final-lab-device.log` |
+| Compose config/build/start | Base and both simulation overlays validated; lab rebuilt and started without deleting volumes | `/tmp/plant-final-docker.log`, `/tmp/plant-final-simulation-start.log`, `/tmp/plant-final-split-start.log` |
+| Actual lab `/login` | **200, text/html**, dark form with CSRF field | Container HTTP check and browser tests |
+| Browser, one device origin | Real Chrome → Spring → simulator → PostgreSQL → actual Python/model passed | `/tmp/plant-final-browser.log` |
+| Browser, two device origins | Same workflow passed with independent movement and sensor simulators | `/tmp/plant-final-browser-split.log` |
+| Disposable Docker HTTP E2E | Passed with isolated app/database and protocol-enforcing simulator | `/tmp/plant-final-smoke.log` |
+| Python ML pipeline | **3 unit tests passed** in the built image; real prediction also used in both browser runs | Docker test output and capture results |
+| UI visual inspection | Logged-out dashboard and dark login screenshots inspected | `/tmp/plant-final-screenshots/` |
+| Source credential guard and whitespace | Passed | `python3 scripts/check-secrets.py`, `git diff --check` |
 
-## Commands
+The first observed lab capture persisted pH **6.5**, temperature **25**, humidity **60**, `simulated=true`, `prediction_status=SUCCEEDED`, and prediction **maíz**. The second browser run used distinct device origins, and its capture appeared in the independent sensor simulator log. Test captures remain in the lab database as labeled synthetic rows.
 
-```bash
-# Complete Java suite with disposable PostgreSQL already started on an ephemeral port:
-PLANT_TEST_DB_URL=jdbc:postgresql://127.0.0.1:<ephemeral-port>/plant_test \
-PLANT_TEST_DB_USER=plant_test PLANT_TEST_DB_PASSWORD=<isolated-test-password> ./mvnw -B clean verify
-# Standalone reproducible PostgreSQL check:
-scripts/test-postgres.sh
-npm run typecheck
-npm test
-npm run build
-scripts/test-firmware.sh
-python3 -m py_compile MLClassification/features.py MLClassification/predict.py MLClassification/train.py
-/tmp/plant-ml-venv/bin/python -m unittest discover -s MLClassification -p 'test_*.py'
-/tmp/plant-ml-venv/bin/python MLClassification/predict.py 25 60 7
-/tmp/plant-ml-venv/bin/python MLClassification/train.py --report MLClassification/evaluation.json --candidate /tmp/plant-model-candidate.pkl
-/tmp/plant-ml-venv/bin/python MLClassification/train.py --report /tmp/plant-evaluation-repeat.json
-python3 scripts/check-secrets.py
-docker compose --env-file .env.example config --quiet
-docker build -t plantclassifier:reliability .
-python3 scripts/smoke-docker.py
-git diff --check
-```
+The browser checks cover invalid and valid login, dashboard redirect, authentication state, HttpOnly/SameSite cookies, missing-CSRF rejection, W/S/A/D mapping, last-key priority, key release, STOP, idle expiry, editable-field safety, capture loading state, actual prediction and persisted reload, error display and logout. Successful paths use real services. Two additional error-display checks deliberately intercept a request and return 502/504; they are UI tests, not evidence of real device/network faults.
 
-Python dependencies were installed into a temporary virtual environment. Python 3.14 was used on the host and the image uses Ubuntu Noble Python 3.12. The pinned scikit-learn version declares Python >=3.11. Other pinned numerical libraries require Python >=3.12, so Python 3.12+ is the supported project environment.
+## Failures encountered, corrected or rerun
 
-## Failures encountered and resolved
+- The host's default Java is 26. Its first compile did not generate Lombok accessors. Running with the project's required Java 21 fixed compilation. The final command exports `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`.
+- The new invalid-login test exposed that an empty `?error` parameter could be represented as null. The login controller now checks parameter presence and the error message is tested in MockMvc and Chrome.
+- Sandbox restrictions initially blocked local HTTP sockets, Docker access, npm and Arduino CLI downloads/discovery. Necessary commands were rerun with permitted access. No blocked check was reported as a pass.
+- A device conformance run overlapped the browser test, which legitimately acquired a replacement control session. Its idle-expiry assertion failed. Running the test alone passed; tests sharing a movement device must run sequentially.
+- Idle-expiry messaging could be overwritten by STOP acknowledgement, and request cleanup could re-enable a signed-out button. Both UI behaviors were corrected and the frontend and browser tests rerun.
 
-- The sandbox denied socket creation in HTTP tests, Docker socket access and dependency downloads. These commands were rerun with the necessary environment approval; no tests were rewritten to pretend a blocked operation passed.
-- A real login test exposed a missing BCrypt format identifier, which was corrected. Mock-user tests alone would not have caught this issue.
-- The Docker end-to-end test detected chunked outgoing movement JSON without Content-Length. Requests now use an explicit bounded JSON byte body and length, and the real HTTP test checks that header.
-- Early MockRestServiceServer tests added expectations after execution; expectation setup was corrected.
-- The previous ML timeout and previous unavailable-port movement test were replaced with behavior tests. Current movement tests inspect actual request bodies and acknowledgements.
-- Flyway emits an advisory that H2 2.4 is newer than its verified H2 release. The same migrations were separately tested on PostgreSQL 17; H2 is not treated as proof of PostgreSQL compatibility.
+**No unresolved failure remains in the final executed software checks.** This does not certify physical hardware behavior.
 
-## Pending validation and deployment actions
+## Security and data preservation
 
-- Compile/upload sketches with the selected ESP32 board and installed Arduino libraries; Arduino CLI is not preinstalled in this environment.
-- Test actual Wi-Fi connection/reconnection, request delays, watchdog timing and STOP with hardware.
-- Validate TB6612FNG direction reversal, supply/wiring, servo travel and diagnostic mode with wheels raised; no physical movement was measured here.
-- Calibrate the pH probe and validate real DHT11 failure handling on connected sensors.
-- Review/baseline the actual deployment database after backup; only the known legacy schema was tested in isolation.
-- Rotate exposed historical credentials and configure HTTPS/network isolation as described in SECURITY.md.
-- Observe the GitHub Actions run after pushing. Local checks do not claim remote CI success.
+- Explicit dark `GET /login`; Spring Security handles `POST /login`, validates configured credentials and rotates the session. Login is not bypassed. The explicit form follows [Spring Security's custom form-login contract](https://docs.spring.io/spring-security/reference/servlet/authentication/passwords/form.html) and no longer relies on default-page generation alongside the custom API authentication entry point.
+- Session authentication, OPERATOR authorization, CSRF on mutations/login/logout, structured 401/403 errors, BCrypt, HttpOnly and SameSite=Strict cookies preserved. Secure cookies remain configurable for HTTPS; the existing loopback HTTP lab uses its appropriate non-Secure configuration.
+- Device tokens remain server-side and are transmitted as `X-Device-Token`; no token or password is embedded in frontend output. Session IDs, increasing sequences, device-relative deadlines, STOP invalidation and watchdog remain intact.
+- Logout attempts an owner-bound STOP and invalidates the session. Firmware watchdog remains the fallback if communication fails.
+- Simulation hardware branches are compiled out. Synthetic readings are labeled in JSON, logs, database metadata and dashboard.
+- Confirmed volume: `plantclassifier-lab_plantclassifier_postgres_data`, separate from `plantclassifier_plantclassifier_postgres_data`. No user database volume was deleted. `.env` and `.env.lab` were not modified. Only task-created disposable test containers and the temporary split sensor simulator were removed.
+
+## Final lab state
+
+The app and PostgreSQL run under `plantclassifier-lab`, with the optional single software ESP32 overlay. Dashboard: <http://127.0.0.1:18080>; device simulator: loopback port **18081**; PostgreSQL host port **55433**. Keep the simulation overlay when restarting this software demo. Starting only the base file restores the hardware URLs from `.env.lab`.
+
+The configured historical device URLs were not treated as current verified ESP32 addresses. Read-only checks failed, and no movement request was sent to those addresses during validation.
+
+## Remaining physical checklist
+
+- [ ] Connect and unambiguously identify the USB ESP32, its board model and serial port.
+- [ ] Populate ignored local firmware configuration privately; verify simulation flags and matching token.
+- [ ] Compile/upload the actual local simulation build to the identified target.
+- [ ] Observe the simulation banner, real Wi-Fi connection and actual DHCP IP at 115200 baud.
+- [ ] Run authenticated `/status`, `/capture`, `/control-session` and `/movement` tests against that verified board.
+- [ ] Run browser commands through Spring and correlate with actual serial output.
+- [ ] Test real Wi-Fi loss/reconnect and watchdog timing; confirm reacquisition is required.
+- [ ] Keep actuators disconnected. Physical motor/servo operation and calibrated sensor validation are future hardware work, not prerequisites for the simulation demo.
+
+The exact Ubuntu, USB, Serial Monitor, one-board, two-board and repeatable test commands are in [USB_SIMULATION.md](USB_SIMULATION.md). Remote GitHub Actions execution was not performed in this session; local results do not imply a remote CI pass.

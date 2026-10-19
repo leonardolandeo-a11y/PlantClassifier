@@ -10,6 +10,7 @@ const buttonText = required("#buttonText");
 const prediction = required("#prediction");
 const movementStatus = required("#movementStatus");
 const sensorStatus = required("#sensorStatus");
+let signedIn = false;
 let csrf;
 async function request(url, body, mutation = false) {
     if (mutation && !csrf) {
@@ -34,8 +35,11 @@ async function request(url, body, mutation = false) {
         throw new Error("Network failure or request timeout — device state unconfirmed");
     }
     if (!response.ok) {
-        if (response.status === 401)
+        if (response.status === 401) {
+            setAuthentication(false);
+            csrf = undefined;
             throw new Error("Sign in to control the robot or capture sensors");
+        }
         if (response.status === 403) {
             csrf = undefined;
             throw new Error("Session protection expired; reload the page");
@@ -76,7 +80,7 @@ captureButton.addEventListener("click", () => {
     void request("/sensors/capture", undefined, true).then(data => { if (data)
         update(data); })
         .catch((error) => { sensorStatus.textContent = error.message; })
-        .finally(() => { captureButton.disabled = false; buttonText.textContent = "Capture Data"; });
+        .finally(() => { captureButton.disabled = !signedIn; buttonText.textContent = "Capture Data"; });
 });
 const keys = new KeyboardState();
 const control = new MovementControl({
@@ -97,7 +101,7 @@ const acquireButton = required("#AcquireControl");
 acquireButton.addEventListener("click", () => {
     keys.clear();
     acquireButton.disabled = true;
-    void control.acquire().finally(() => { acquireButton.disabled = false; });
+    void control.acquire().finally(() => { acquireButton.disabled = !signedIn; });
 });
 function stop() { keys.clear(); control.stop(); }
 required("#StopMovement").addEventListener("click", stop);
@@ -127,4 +131,37 @@ document.addEventListener("visibilitychange", () => { if (document.hidden)
     stop(); });
 document.addEventListener("focusin", event => { if (typing(event.target))
     stop(); });
-void load();
+function setAuthentication(authenticated, username = "") {
+    signedIn = authenticated;
+    required("#authStatus").textContent = authenticated ? `Signed in as ${username}` : "Sign in to use the controls";
+    required("#SignIn").hidden = authenticated;
+    required("#SignOut").hidden = !authenticated;
+    captureButton.disabled = !authenticated;
+    acquireButton.disabled = !authenticated;
+}
+required("#SignOut").addEventListener("click", () => {
+    stop();
+    void (async () => {
+        // Native form navigation follows Spring's logout redirect and clears cached page state.
+        const response = await fetch("/csrf", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Unable to initialize sign out");
+        const token = await response.json();
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = "/logout";
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "_csrf";
+        input.value = token.token;
+        form.append(input);
+        document.body.append(form);
+        form.submit();
+    })().catch((error) => { movementStatus.textContent = error.message; });
+});
+setAuthentication(false);
+void request("/session").then(session => {
+    setAuthentication(session?.authenticated ?? false, session?.username);
+    if (session?.authenticated)
+        void load();
+}).catch((error) => { sensorStatus.textContent = error.message; });

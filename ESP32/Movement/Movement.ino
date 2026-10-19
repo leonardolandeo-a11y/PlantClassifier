@@ -1,12 +1,17 @@
 // ESP32 + TB6612FNG + Servo + WiFi
 // Basado en el diagnostico SIN WiFi que funciono fisicamente.
 // Requiere ESP32 Arduino Core 3.x, ESP32Servo y ArduinoJson 7.
-// PRIMERAS PRUEBAS: LEVANTAR LAS RUEDAS.
+// Safe default: USB-only simulation. Real hardware mode requires an explicit opt-in.
+// In real hardware mode, raise wheels before testing.
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include "wifi_config.h"
+#include "simulation_config.h"
+#if !SIMULATION_MODE
 #include <ESP32Servo.h>
+#endif
 
 // ============================================================
 // CONFIGURACION WIFI
@@ -16,6 +21,7 @@
 
 WebServer server(80);
 #include "control_protocol.h"
+#include "simulated_capture.h"
 
 // ============================================================
 // PINES: EXACTAMENTE LOS DEL TEST QUE FUNCIONO
@@ -41,7 +47,9 @@ constexpr unsigned long COMMAND_TIMEOUT_MS = 1500;
 #define ENABLE_SELFTEST_ENDPOINT 0
 #endif
 
+#if !SIMULATION_MODE
 Servo steeringServo;
+#endif
 bool servoOK = false;
 bool pwmOK = false;
 bool lastPWMWriteOK = false;
@@ -55,11 +63,12 @@ unsigned long lastCommandTime = 0;
 // MOTOR: MISMAS OPERACIONES DIRECTAS QUE EL TEST
 // ============================================================
 void motorStop() {
-  if (pwmOK) {
-    lastPWMWriteOK = ledcWrite(PWMA, 0);
-  }
+#if !SIMULATION_MODE
+  if (pwmOK) lastPWMWriteOK = ledcWrite(PWMA, 0);
   digitalWrite(AIN1, LOW);
   digitalWrite(AIN2, LOW);
+  digitalWrite(STBY, LOW);
+#endif
   driveDirection = 0;
   currentSpeed = 0;
 }
@@ -67,6 +76,11 @@ void motorStop() {
 bool motorDrive(int direction, int speed) {
   speed = constrain(speed, 0, 255);
 
+#if SIMULATION_MODE
+  driveDirection = speed == 0 ? 0 : direction;
+  currentSpeed = speed;
+  return true;
+#else
   if (!pwmOK) return false;
   if (direction == 0 || speed == 0) {
     motorStop();
@@ -92,11 +106,14 @@ bool motorDrive(int direction, int speed) {
   driveDirection = direction;
   currentSpeed = speed;
   return true;
+#endif
 }
 
 void servoMove(int angle) {
   currentAngle = constrain(angle, SERVO_LEFT, SERVO_RIGHT);
+#if !SIMULATION_MODE
   if (servoOK) steeringServo.write(currentAngle);
+#endif
 }
 
 void robotStop() {
@@ -108,6 +125,9 @@ void robotStop() {
 // INICIALIZACION: COPIADA EN EL MISMO ORDEN DEL TEST EXITOSO
 // ============================================================
 void setupHardware() {
+#if SIMULATION_MODE
+  Serial.println("[MODE] SIMULATION - HARDWARE OUTPUT DISABLED");
+#else
   // 1. PRIMERO EL SERVO (tal como en el test)
   steeringServo.setPeriodHertz(50);
   steeringServo.attach(SERVO_PIN, 500, 2400);
@@ -133,9 +153,10 @@ void setupHardware() {
   }
 
   motorStop();
-  digitalWrite(STBY, HIGH);
+  // Standby remains LOW until an authenticated drive command.
   Serial.printf("[INIT] STBY=%d, PWM=%lu\n",
                 digitalRead(STBY), (unsigned long)ledcRead(PWMA));
+#endif
 }
 
 // ============================================================
@@ -166,6 +187,11 @@ void sendError(int code, const char* message) {
 void sendStatus() {
   JsonDocument doc;
   doc["status"] = "online";
+  doc["simulated"] = bool(SIMULATION_MODE);
+  doc["mode"] = SIMULATION_MODE ? "simulation" : "hardware";
+  doc["sensorSimulated"] = bool(SENSOR_SIMULATION_MODE);
+  doc["hardwareOutputEnabled"] = !bool(SIMULATION_MODE);
+  doc["controlActive"] = gate.active;
   doc["ip"] = WiFi.localIP().toString();
   doc["commandedMoving"] = driveDirection != 0;
   doc["speed"] = currentSpeed;
@@ -173,10 +199,14 @@ void sendStatus() {
   doc["servoAttached"] = servoOK;
   doc["pwmAttached"] = pwmOK;
   doc["lastPwmWriteOk"] = lastPWMWriteOK;
+#if !SIMULATION_MODE
   doc["pwmDuty"] = pwmOK ? (int)ledcRead(PWMA) : 0;
   doc["standbyPin"] = digitalRead(STBY);
   doc["ain1Pin"] = digitalRead(AIN1);
   doc["ain2Pin"] = digitalRead(AIN2);
+#else
+  doc["pwmDuty"] = 0;
+#endif
   // Estos campos representan estados internos, NO movimiento medido.
   String body;
   serializeJson(doc, body);
@@ -191,11 +221,13 @@ void handleMovement() {
   diagnosticRunning = false;
 
   if (command == "FORWARD" || command == "BACKWARD") {
+#if !SIMULATION_MODE
     if (!pwmOK) {
       robotStop(); gate.invalidate();
       sendError(503, "Motor PWM initialization failed");
       return;
     }
+#endif
     int direction = command == "FORWARD" ? 1 : -1;
     if (!motorDrive(direction, speed)) {
       robotStop(); gate.invalidate();
@@ -203,11 +235,13 @@ void handleMovement() {
       return;
     }
   } else if (command == "LEFT" || command == "RIGHT") {
+#if !SIMULATION_MODE
     if (!servoOK) {
       robotStop(); gate.invalidate();
       sendError(503, "Servo initialization failed");
       return;
     }
+#endif
     motorStop(); // Steering-only commands must not leave earlier propulsion running.
     servoMove(command == "LEFT" ? SERVO_LEFT : SERVO_RIGHT);
   } else if (command == "CENTER") {
@@ -221,21 +255,30 @@ void handleMovement() {
   }
 
   lastCommandTime = millis();
+#if SIMULATION_MODE
+  Serial.printf("[CMD] %s speed=%d\n", command.c_str(), currentSpeed);
+  Serial.printf("[SIMULATION] %s accepted; hardware output disabled\n", command.c_str());
+#else
   Serial.printf("[CMD] %s speed=%d angle=%d PWM=%lu STBY=%d\n",
                 command.c_str(), currentSpeed, currentAngle,
                 (unsigned long)(pwmOK ? ledcRead(PWMA) : 0),
                 digitalRead(STBY));
+#endif
 
   JsonDocument result;
   result["status"] = "OK";
-  result["simulated"] = false;
+  result["simulated"] = bool(SIMULATION_MODE);
   result["sessionId"] = controllerSession;
   result["sequence"] = doc["sequence"].as<uint32_t>();
   result["command"] = command;
   result["speed"] = currentSpeed;
   result["angle"] = currentAngle;
   result["commandedMoving"] = driveDirection != 0;
+#if !SIMULATION_MODE
   result["pwmDuty"] = pwmOK ? (int)ledcRead(PWMA) : 0;
+#else
+  result["pwmDuty"] = 0;
+#endif
   String body;
   serializeJson(result, body);
   server.send(200, "application/json", body);
@@ -264,6 +307,9 @@ void setup() {
   configureControl();
   server.on("/status", HTTP_GET, []() { if (authorized()) sendStatus(); });
   server.on("/movement", HTTP_POST, handleMovement);
+#if SENSOR_SIMULATION_MODE
+  server.on("/capture", HTTP_GET, simulatedCapture);
+#endif
 #if ENABLE_SELFTEST_ENDPOINT
   server.on("/test", HTTP_POST, []() {
     JsonDocument doc;
@@ -283,9 +329,10 @@ void setup() {
 #endif
   server.begin();
 
+  if (WiFi.status() == WL_CONNECTED) Serial.println("[WIFI] Connected");
   Serial.print("[WIFI] IP: ");
   Serial.println(WiFi.localIP());
-  Serial.println("[HTTP] /status y /movement listos");
+  Serial.println("[HTTP] Server started");
 #if ENABLE_SELFTEST_ENDPOINT
   Serial.println("[HTTP] /test habilitado SOLO para diagnostico");
 #endif

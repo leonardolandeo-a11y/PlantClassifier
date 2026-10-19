@@ -1,3 +1,48 @@
+# Final integration changes — 2026-10-18
+
+| Files | Purpose |
+|---|---|
+| `src/main/java/com/codewithmosh/plantclassifier/config/SecurityConfig.java` | Explicit login page, protected native login/logout, owner STOP on logout, no saved API request cache. |
+| `src/main/java/com/codewithmosh/plantclassifier/controller/LoginController.java` (new) | Render the dark native form with an escaped, session-bound CSRF token and generic login failure. |
+| `src/main/java/com/codewithmosh/plantclassifier/controller/SessionController.java` | Authentication status for the dashboard. |
+| `src/main/java/com/codewithmosh/plantclassifier/service/MovementService.java` | Best-effort owner-bound STOP when logging out. |
+| `src/main/resources/templates/login.html` (new) | Accessible dark login form. |
+| `src/main/resources/static/index.html` | Sign-in state and sign-out action. |
+| `frontend/scripts.ts` | Authentication-aware buttons, CSRF logout, correct cleanup after unauthorized responses. |
+| `frontend/control.ts` | Visible idle expiry, zero motor speed for steering, expiry acknowledgement messaging. |
+| `frontend/input.css` | Login styling and template class scanning. |
+| `src/main/resources/static/js/scripts.js`, `src/main/resources/static/js/control.js`, `src/main/resources/static/css/output.css` | Regenerated production assets. |
+| `frontend/control.test.mjs` | Six control tests including key mapping/speed and idle expiry. |
+| `src/test/java/com/codewithmosh/plantclassifier/ApiSecurityTest.java` | GET login, form/error flow, session rotation/logout, CSRF, public/protected endpoint integration tests. |
+| `src/test/java/com/codewithmosh/plantclassifier/MovementServiceTest.java` | Logout owner isolation and STOP invalidation test. |
+| `ESP32/Movement/Movement.ino` | Default safe simulation, compile-excluded actuator access, synthetic capture, explicit status and serial output, stopped hardware standby safety. |
+| `ESP32/PlantClassifier/PlantClassifier.ino` | Sensor simulation with no ADC/DHT reads, clearly labeled synthetic capture, movement safety status, bounded Wi-Fi startup/reconnect, calibrated real-sensor branch. |
+| Both `ESP32/{Movement,PlantClassifier}/simulation_config.h` (new) | Safe defaults, legal flag checks, rejection of physical self-test in simulation, legacy sensor-flag compatibility. |
+| Both `ESP32/{Movement,PlantClassifier}/simulated_capture.h` (new) | Authenticated fixed synthetic fixture and serial provenance. |
+| Both `ESP32/{Movement,PlantClassifier}/control_protocol.h` | Log acquisition without exposing tokens or session IDs. |
+| Both `ESP32/{Movement,PlantClassifier}/wifi_config.example.h` | Explicit safe demo flags and real-sensor calibration guidance; placeholders only. |
+| `Dockerfile` | Include login template in Tailwind scanning during image build. |
+| `docker-compose.yaml` | Application healthcheck. |
+| `docker-compose.simulation.yaml` (new) | Optional authenticated single-device simulator, loopback port, environment-file preservation. |
+| `docker-compose.simulation-split.yaml` (new) | Optional independent sensor simulator for two-origin integration tests. |
+| `scripts/esp32-simulator.py` (new) | Hardware-free authenticated HTTP device, sessions, deadlines, ordering, STOP and watchdog. |
+| `scripts/test-device.py` (new) | Reusable HTTP conformance checks; refuses movement unless device advertises safe simulation. |
+| `scripts/test-simulator.py` (new) | Disposable local simulator plus real HTTP conformance tests. |
+| `scripts/compile-firmware.sh` (new) | Compile both simulation sketches, inspect object symbols, compile future hardware branches; never flash. |
+| `scripts/test-firmware.sh` | Shared-header consistency and prohibited configuration check. |
+| `scripts/browser-e2e.mjs` (new) | Actual Chrome dashboard integration and error-display tests. |
+| `scripts/with-lab-env.mjs` (new) | Load dotenv credentials as data without printing or executing them. |
+| `scripts/smoke-docker.py` | Use the enforcing simulator and test all movement commands plus actual login form/ML/persistence. |
+| `scripts/test-postgres.sh` | Optional Maven arguments to run all tests against disposable PostgreSQL. |
+| `package.json`, `package-lock.json` | Playwright development dependency and `test:e2e` entry point. |
+| `.github/workflows/verify.yml` | Run software-device protocol tests in CI. |
+| `README.md`, `docs/SECURITY.md`, `docs/CONTROL_PROTOCOL.md` | Updated login, modes and protocol guidance. |
+| `docs/USB_SIMULATION.md` (new) | Complete Ubuntu/USB/Serial Monitor procedure, both architectures and exact test commands. |
+| `docs/VERIFICATION.md` | Actual current results, resolved failures, final lab state and outstanding physical checklist. |
+| `docs/CHANGED_FILES.md` | This inventory; prior implementation inventory retained below. |
+
+## Prior implementation inventory
+
 # Changed files
 
 Complete implementation manifest relative to the reviewed main branch. A = added; M = modified; D = removed. Dataset and deployed model are unchanged.

@@ -39,3 +39,20 @@ test('losing focus during acquisition prevents activation',async()=>{
     const acquiring=control.acquire(); control.stop(); complete({sessionId:id}); await acquiring;
     control.set('FORWARD'); assert.equal(calls.length,0);
 });
+
+test('W S A D mapping and steering carries zero motor speed',async()=>{
+    const calls=[]; const keys=new KeyboardState();
+    const control=new MovementControl({acquire:async()=>({sessionId:id}),send:async r=>{calls.push(r);return ack(r);}},()=>{},()=>{});
+    for (const [key,command] of [['w','FORWARD'],['s','BACKWARD'],['a','LEFT'],['d','RIGHT']]) {
+        keys.clear(); keys.press(key); assert.equal(keys.command(),command);
+        await control.acquire(); control.set(command); await tick(); control.stop();
+        assert.equal(calls.at(-2).speed, ['LEFT','RIGHT'].includes(command)?0:150);
+    }
+});
+test('idle acquisition expires visibly and requires reacquisition',async()=>{
+    const calls=[]; const messages=[];
+    const control=new MovementControl({acquire:async()=>({sessionId:id}),send:async r=>{calls.push(r);return ack(r);}},m=>messages.push(m),()=>{});
+    await control.acquire(); await new Promise(r=>setTimeout(r,1550));
+    assert.ok(messages.some(m=>m.includes('Control expired')));
+    control.set('FORWARD'); assert.deepEqual(calls.map(r=>r.command),['STOP']);
+});

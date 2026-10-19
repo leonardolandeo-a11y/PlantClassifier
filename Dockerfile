@@ -6,6 +6,7 @@ COPY frontend ./frontend
 COPY scripts ./scripts
 COPY tsconfig.json ./
 COPY src/main/resources/static/index.html ./src/main/resources/static/index.html
+COPY src/main/resources/templates ./src/main/resources/templates
 RUN npm run typecheck && npm test && npm run build
 
 FROM eclipse-temurin:21-jdk-noble AS build

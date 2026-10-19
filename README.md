@@ -119,8 +119,10 @@ Commit regenerated `static/js` and `static/css` with source changes. CI checks f
 
 ## ESP32 simulation: verify without motors
 
-1. Install Arduino ESP32 Core 3.x, ArduinoJson 7 and the Adafruit DHT sensor library (plus its Unified Sensor dependency).
-2. In `ESP32/PlantClassifier`, copy `wifi_config.example.h` to `wifi_config.h`. Enter Wi-Fi details and the same `DEVICE_TOKEN` as Spring. Keep `REAL_SENSOR_MODE=0`.
+See the complete [USB-only lab and simulation guide](docs/USB_SIMULATION.md) for the working login, software ESP32, one/two-board deployment, browser tests, safe compile/upload procedure and Serial Monitor instructions.
+
+1. Install Arduino ESP32 Core 3.x, ArduinoJson 7 (DHT libraries are required only for real sensor mode).
+2. In `ESP32/PlantClassifier`, copy `wifi_config.example.h` to `wifi_config.h`. Enter Wi-Fi details and the same `DEVICE_TOKEN` as Spring. Keep `SIMULATION_MODE=1` and `SENSOR_SIMULATION_MODE=1`.
 3. Open `PlantClassifier.ino`, select the correct ESP32 board/port, compile and upload. Open Serial Monitor at 115200 baud and obtain the device IP.
 4. Set both `ESP32_URL` and `MOVEMENT_ESP32_URL` to that address. Start Spring, sign in, and capture data. The dashboard must identify simulated measurements.
 5. Acquire control and press W. Confirm the normalized command in Serial Monitor and an **accepted (simulated)** acknowledgement in the dashboard. Release all keys; STOP closes the epoch.
@@ -128,9 +130,9 @@ Commit regenerated `static/js` and `static/css` with source changes. CI checks f
 
 ## Physical firmware and real sensors
 
-For the robot use `ESP32/Movement/Movement.ino` with ESP32Servo, ArduinoJson 7 and its own ignored `wifi_config.h`. Pin and PWM values above are preserved. Keep `ENABLE_SELFTEST_ENDPOINT=0`; `/test` is absent by default. Diagnostic builds may explicitly set it to 1: authenticated `POST /test` with the same session/sequence/deadline envelope (`command=FORWARD`, `speed=200`) after acquiring control commands forward PWM 200 for at most one second, while normal HTTP processing, STOP and Wi-Fi checks continue. It is never a proof of physical movement. Keep wheels raised.
+For the robot use `ESP32/Movement/Movement.ino` with ESP32Servo, ArduinoJson 7 and its own ignored `wifi_config.h`. Pin and PWM values above are preserved. This sketch now defaults to safe simulation; real actuation requires explicitly setting `SIMULATION_MODE=0`. Keep `ENABLE_SELFTEST_ENDPOINT=0`; `/test` is absent by default. Diagnostic builds may explicitly set it to 1: authenticated `POST /test` with the same session/sequence/deadline envelope (`command=FORWARD`, `speed=200`) after acquiring control commands forward PWM 200 for at most one second, while normal HTTP processing, STOP and Wi-Fi checks continue. It is never a proof of physical movement. Keep wheels raised.
 
-For real environmental readings, use the sensor sketch with a connected DHT11 and an electrically compatible pH interface. Calibrate against certified pH 7 and pH 4 buffers at controlled temperature: wait for stabilized ADC readings, record `PH_ADC_AT_7` and `PH_ADC_AT_4` in local configuration, verify with an independent buffer and repeat as required by the probe. Enable `REAL_SENSOR_MODE=1` only after calibration. The simple linear mapping has no temperature compensation and is not a laboratory accuracy guarantee. Failed DHT reads, invalid calibration/output and non-finite values produce 503; raw ADC data is never labeled calibrated pH by default.
+For real environmental readings, use the sensor sketch with a connected DHT11 and an electrically compatible pH interface. Calibrate against certified pH 7 and pH 4 buffers at controlled temperature: wait for stabilized ADC readings, record `PH_ADC_AT_7` and `PH_ADC_AT_4` in local configuration, verify with an independent buffer and repeat as required by the probe. Set `SENSOR_SIMULATION_MODE=0` only after calibration. The simple linear mapping has no temperature compensation and is not a laboratory accuracy guarantee. Failed DHT reads, invalid calibration/output and non-finite values produce 503; raw ADC data is never labeled calibrated pH by default.
 
 ## REST API and curl
 
@@ -139,7 +141,10 @@ All mutation requests to Spring require a browser session and a CSRF token. Ther
 | Endpoint | Result |
 |---|---|
 | `GET /csrf` | Session CSRF `token` and `headerName` |
-| `POST /login` | Standard form login; redirects on success |
+| `GET /login` | Dark native form containing a session-bound CSRF token |
+| `POST /login` | Spring Security form login; redirects on success |
+| `GET /session` | Authentication status; never returns passwords or device tokens |
+| `POST /logout` | CSRF protected STOP attempt and session invalidation |
 | `POST /logout` | Session logout (CSRF required) |
 | `POST /movement/session` | Stops device and acquires a new controller epoch |
 | `POST /movement` | Typed ESP32 acknowledgement; requires command, speed, sessionId, sequence |
@@ -223,4 +228,4 @@ The PR workflow runs Java verification, real PostgreSQL migration tests, TypeScr
 - **Blank sensor history:** a fresh database returns 204 until capture. Legacy measurements have unknown time/provenance.
 - **No motor motion despite an accepted command:** inspect supply, common ground, standby, PWM and servo wiring. Do not interpret software acknowledgement as measured motion.
 
-Physical firmware compilation/upload, motor/servo behavior, watchdog timing under actual radio faults, pH calibration and real DHT11 behavior require hardware validation. Login throttling, individual operator accounts, TLS device provisioning, wheel feedback, pending-prediction retry and independently collected field data are future improvements. See [security actions](docs/SECURITY.md) before deploying.
+Physical firmware upload, motor/servo behavior, watchdog timing under actual radio faults, pH calibration and real DHT11 behavior require hardware validation. Login throttling, individual operator accounts, TLS device provisioning, wheel feedback, pending-prediction retry and independently collected field data are future improvements. See [security actions](docs/SECURITY.md) before deploying.

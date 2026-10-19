@@ -3,7 +3,6 @@ No production configuration, volumes or physical devices are used.
 Run after: docker build -t plantclassifier:reliability .
 """
 import http.cookiejar
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -18,42 +17,8 @@ import urllib.request
 
 
 def inside():
-    session = "a" * 32
-    class Device(BaseHTTPRequestHandler):
-        def log_message(self, *_):
-            pass
-        def reply(self, status, data):
-            body = json.dumps(data).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-        def authenticated(self):
-            if self.headers.get("X-Device-Token") != os.environ["DEVICE_TOKEN"]:
-                self.reply(401, {"error": "Unauthorized"})
-                return False
-            return True
-        def do_GET(self):
-            if not self.authenticated():
-                return
-            if self.path == "/capture":
-                self.reply(200, {"temperature": 25, "humidity": 60, "ph": 7, "simulated": True})
-            else:
-                self.reply(404, {})
-        def do_POST(self):
-            if not self.authenticated():
-                return
-            if self.path == "/control-session":
-                self.reply(200, {"sessionId": session, "deviceTimeMs": 1000})
-            elif self.path == "/movement":
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                assert body["sessionId"] == session and isinstance(body["deadlineMs"], int)
-                self.reply(200, {"status": "OK", "command": body["command"], "speed": body["speed"],
-                                 "simulated": True, "sessionId": session, "sequence": body["sequence"]})
-            else:
-                self.reply(404, {})
-
-    server = ThreadingHTTPServer(("127.0.0.1", 18080), Device)
+    from esp32_simulator import make_server
+    server = make_server("127.0.0.1", 18080, os.environ["DEVICE_TOKEN"])
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     cookies = http.cookiejar.CookieJar()
@@ -77,6 +42,8 @@ def inside():
                 time.sleep(1)
         else:
             raise RuntimeError("Application did not start")
+        with client.open(base + "/login", timeout=10) as response:
+            assert response.status == 200 and b'name="_csrf"' in response.read()
         try:
             post("/movement")
             raise AssertionError("Unauthenticated movement accepted")
@@ -88,9 +55,11 @@ def inside():
         csrf = get("/csrf")["token"]
         with post("/movement/session", token=csrf) as response:
             control = json.load(response)
-        with post("/movement", {"command": "STOP", "speed": 0, "sessionId": control["sessionId"], "sequence": 1}, csrf) as response:
-            ack = json.load(response)
-            assert ack["status"] == "OK" and ack["simulated"] is True
+        for sequence, command in enumerate(["FORWARD", "BACKWARD", "LEFT", "RIGHT", "CENTER", "STOP"], 1):
+            with post("/movement", {"command": command, "speed": 150 if command in ("FORWARD", "BACKWARD") else 0,
+                                   "sessionId": control["sessionId"], "sequence": sequence}, csrf) as response:
+                ack = json.load(response)
+                assert ack["status"] == "OK" and ack["simulated"] is True
         with post("/sensors/capture", token=csrf) as response:
             capture = json.load(response)
             assert capture["predictionStatus"] == "SUCCEEDED", capture["predictionStatus"]
@@ -100,6 +69,7 @@ def inside():
         assert latest["id"] == capture["id"] and latest["prediction"] == capture["prediction"]
         print("Docker E2E passed: login/CSRF, unauthorized rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:
+        server.simulator_stop.set()
         server.shutdown()
         server.server_close()
 
@@ -130,6 +100,7 @@ def outside():
             "-e", "ML_WORKING_DIRECTORY=/app/MLClassification", "-e", "ML_PYTHON_PATH=/opt/venv/bin/python3",
             os.environ.get("PLANT_TEST_IMAGE", "plantclassifier:reliability"))
         run("docker", "cp", str(Path(__file__).resolve()), application + ":/tmp/smoke.py")
+        run("docker", "cp", str(Path(__file__).with_name("esp32-simulator.py").resolve()), application + ":/tmp/esp32_simulator.py")
         print(run("docker", "exec", application, "python", "/tmp/smoke.py", "--inside"))
     except subprocess.CalledProcessError as error:
         # Only print test stderr, never the credential environment or container inspect output.

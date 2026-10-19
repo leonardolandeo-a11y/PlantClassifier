@@ -36,7 +36,12 @@ export class MovementControl {
             this.session = session.sessionId;
             this.sequence = 0;
             this.status("Control ready — press a direction within 1.5 s");
-            // Hold the stopped epoch with STOP? No: epochs expire. Explicit reacquisition is safe.
+            this.timer = setTimeout(() => {
+                if (generation !== this.generation || this.desired !== "STOP")
+                    return;
+                this.stop("Control expired; acquire again");
+                this.failed();
+            }, 1500);
         }
         catch (error) {
             if (generation === this.generation)
@@ -58,7 +63,7 @@ export class MovementControl {
             void this.pump();
         }
     }
-    stop() {
+    stop(reason = "") {
         clearTimeout(this.timer);
         const session = this.session;
         this.session = null;
@@ -72,10 +77,10 @@ export class MovementControl {
         this.status("STOP submitted — awaiting device acknowledgement");
         void this.transport.send(request).then(ack => {
             if (generation === this.generation)
-                this.status(`STOP accepted by ESP32${ack.simulated ? " (simulated)" : " (commanded state)"}`);
+                this.status(`${reason ? reason + " · " : ""}STOP accepted by ESP32${ack.simulated ? " (simulated)" : " (commanded state)"}`);
         }).catch(error => {
             if (generation === this.generation)
-                this.status(`STOP unconfirmed: ${message(error)}. Device watchdog remains active.`);
+                this.status(`${reason ? reason + " · " : ""}STOP unconfirmed: ${message(error)}. Device watchdog remains active.`);
         });
     }
     async pump() {
@@ -83,7 +88,7 @@ export class MovementControl {
             return;
         this.busy = true;
         const generation = this.generation;
-        const request = { command: this.desired, speed: 150, sessionId: this.session, sequence: ++this.sequence };
+        const request = { command: this.desired, speed: this.desired === "FORWARD" || this.desired === "BACKWARD" ? 150 : 0, sessionId: this.session, sequence: ++this.sequence };
         this.status(`${request.command} submitted…`);
         try {
             const ack = await this.transport.send(request);

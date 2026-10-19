@@ -1,0 +1,19 @@
+# Optional lab overlay. Uses the lab token without changing .env.lab or any database volume.
+services:
+  simulator:
+    image: plantclassifier-lab-app
+    entrypoint: ["python", "/simulator/esp32-simulator.py", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      DEVICE_TOKEN: ${DEVICE_TOKEN:?Set DEVICE_TOKEN}
+    volumes:
+      - ./scripts/esp32-simulator.py:/simulator/esp32-simulator.py:ro
+    ports:
+      - "127.0.0.1:18081:8081"
+    restart: unless-stopped
+  app:
+    environment:
+      ESP32_URL: http://simulator:8081
+      MOVEMENT_ESP32_URL: http://simulator:8081
+    depends_on:
+      simulator:
+        condition: service_started

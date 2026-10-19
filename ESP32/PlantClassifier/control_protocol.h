@@ -38,6 +38,7 @@ void acquireControl() {
            (unsigned long)esp_random(), (unsigned long)esp_random(), (unsigned long)esp_random());
   controllerSession = id;
   gate.begin(millis());
+  Serial.println("[CONTROL] Session acquired");
   JsonDocument result;
   result["sessionId"] = controllerSession;
   result["deviceTimeMs"] = millis();
