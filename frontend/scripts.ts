@@ -1,4 +1,4 @@
-import {KeyboardState, MovementControl, type Acknowledgement, type MovementRequest} from "./control.js";
+import {KeyboardState, MovementControl, ControlRejected, type Acknowledgement, type MovementRequest} from "./control.js";
 interface SensorData {
     ph: number; temperature: number; humidity: number; capturedAt: string | null;
     simulated: boolean | null; prediction: string | null; predictionStatus: string; predictionError: string | null;
@@ -34,7 +34,7 @@ async function request<T>(url: string, body?: unknown, mutation = false): Promis
     if (!response.ok) {
         if (response.status === 401) { setAuthentication(false); csrf = undefined; throw new Error("Sign in to control the robot or capture sensors"); }
         if (response.status === 403) { csrf = undefined; throw new Error("Session protection expired; reload the page"); }
-        if (response.status === 409) throw new Error("Command rejected: control expired or superseded");
+        if (response.status === 409) throw new ControlRejected("Command rejected: control expired or superseded");
         if (response.status === 504) throw new Error("Device timed out");
         if (response.status === 502) throw new Error("Device unreachable or invalid response");
         throw new Error(`Request failed (${response.status})`);
@@ -76,20 +76,16 @@ const control = new MovementControl({
         return ack;
     }
 }, message => { movementStatus.textContent = message; }, () => keys.clear());
-const acquireButton = required<HTMLButtonElement>("#AcquireControl");
-acquireButton.addEventListener("click", () => {
-    keys.clear(); acquireButton.disabled = true;
-    void control.acquire().finally(() => { acquireButton.disabled = !signedIn; });
-});
 function stop(): void { keys.clear(); control.stop(); }
 required<HTMLButtonElement>("#StopMovement").addEventListener("click", stop);
 function typing(target: EventTarget | null): boolean {
     return target instanceof HTMLElement && (target.isContentEditable || !!target.closest("input, textarea, select"));
 }
 document.addEventListener("keydown", event => {
-    if (typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!signedIn || document.hidden || !document.hasFocus() || typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     const key = event.key.toLowerCase();
     if (!["w", "a", "s", "d"].includes(key)) return;
+    if (keys.pressedKeys.has(key)) return;
     event.preventDefault(); keys.press(key); control.set(keys.command());
 });
 document.addEventListener("keyup", event => {
@@ -107,7 +103,8 @@ function setAuthentication(authenticated: boolean, username = ""): void {
     required<HTMLElement>("#SignIn").hidden = authenticated;
     required<HTMLElement>("#SignOut").hidden = !authenticated;
     captureButton.disabled = !authenticated;
-    acquireButton.disabled = !authenticated;
+    if (!authenticated) stop();
+    else movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
 }
 required<HTMLButtonElement>("#SignOut").addEventListener("click", () => {
     stop();

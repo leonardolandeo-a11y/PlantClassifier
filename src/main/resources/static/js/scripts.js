@@ -1,4 +1,4 @@
-import { KeyboardState, MovementControl } from "./control.js";
+import { KeyboardState, MovementControl, ControlRejected } from "./control.js";
 function required(selector) {
     const element = document.querySelector(selector);
     if (!element)
@@ -45,7 +45,7 @@ async function request(url, body, mutation = false) {
             throw new Error("Session protection expired; reload the page");
         }
         if (response.status === 409)
-            throw new Error("Command rejected: control expired or superseded");
+            throw new ControlRejected("Command rejected: control expired or superseded");
         if (response.status === 504)
             throw new Error("Device timed out");
         if (response.status === 502)
@@ -97,22 +97,18 @@ const control = new MovementControl({
         return ack;
     }
 }, message => { movementStatus.textContent = message; }, () => keys.clear());
-const acquireButton = required("#AcquireControl");
-acquireButton.addEventListener("click", () => {
-    keys.clear();
-    acquireButton.disabled = true;
-    void control.acquire().finally(() => { acquireButton.disabled = !signedIn; });
-});
 function stop() { keys.clear(); control.stop(); }
 required("#StopMovement").addEventListener("click", stop);
 function typing(target) {
     return target instanceof HTMLElement && (target.isContentEditable || !!target.closest("input, textarea, select"));
 }
 document.addEventListener("keydown", event => {
-    if (typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
+    if (!signedIn || document.hidden || !document.hasFocus() || typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
         return;
     const key = event.key.toLowerCase();
     if (!["w", "a", "s", "d"].includes(key))
+        return;
+    if (keys.pressedKeys.has(key))
         return;
     event.preventDefault();
     keys.press(key);
@@ -137,7 +133,10 @@ function setAuthentication(authenticated, username = "") {
     required("#SignIn").hidden = authenticated;
     required("#SignOut").hidden = !authenticated;
     captureButton.disabled = !authenticated;
-    acquireButton.disabled = !authenticated;
+    if (!authenticated)
+        stop();
+    else
+        movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
 }
 required("#SignOut").addEventListener("click", () => {
     stop();

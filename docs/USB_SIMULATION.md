@@ -26,7 +26,7 @@ docker compose -p plantclassifier-lab --env-file .env.lab \
   -f docker-compose.yaml -f docker-compose.simulation.yaml up -d
 ```
 
-Open <http://127.0.0.1:18080/login>. Sign in using the existing lab operator credentials. The dashboard shows authentication state and offers **Sign out**. Click **Acquire control**, then press a direction within 1.5 seconds. W/S/A/D send FORWARD/BACKWARD/LEFT/RIGHT. The most recently pressed key wins; releasing it resumes another held key. Releasing all keys or clicking STOP closes the control session; acquire again for another movement. Text fields ignore movement keys. Idle acquisition expires visibly.
+Open <http://127.0.0.1:18080/login>. Sign in using the existing lab operator credentials. The dashboard shows authentication state and offers **Sign out**. Press a direction to acquire control automatically. W/S/A/D send FORWARD/BACKWARD/LEFT/RIGHT. The most recently pressed key wins; releasing it resumes another held key. Releasing all keys or clicking STOP closes the control session; the next fresh keypress acquires a new session automatically. Text fields ignore movement keys.
 
 Click **Capture Data**. The dashboard labels synthetic values and displays the actual model prediction after PostgreSQL persistence. Test captures add labeled rows to the lab database; scripts do not delete those rows.
 
@@ -52,7 +52,7 @@ PLANT_BASE_URL=http://127.0.0.1:18080 PLANT_DEVICE_URL=http://127.0.0.1:18081 \
 node scripts/with-lab-env.mjs .env.lab npm run test:e2e
 ```
 
-If Chrome is absent, `npx playwright install chromium` installs the test browser; omit `CHROME_PATH` afterward. Browser tests refuse movement when the supplied device `/status` does not explicitly report simulation with hardware outputs disabled. Supply the movement device actually configured in the backend. The successful workflow is unmocked; two additional UI error checks deliberately inject failed responses.
+If Chrome is absent, `npx playwright install chromium` installs the test browser; omit `CHROME_PATH` afterward. Browser tests refuse movement when the supplied device `/status` does not explicitly report simulation with hardware outputs disabled. Supply the movement device actually configured in the backend. Normal movement and captures use the real simulator HTTP stack. Race checks deliberately delay acquisition and movement requests; error checks inject failed HTTP responses and a network abort.
 
 The standalone Docker smoke test uses its own disposable containers and no user volume:
 
@@ -131,7 +131,7 @@ PLANT_TEST_IMAGE=plantclassifier-lab-app python3 scripts/smoke-docker.py
      node scripts/with-lab-env.mjs .env.lab npm run test:e2e
    ```
 
-   Sign in manually as well, acquire control and press/release keys. Correlate the accepted commands with actual serial output. Capture sensors and confirm the simulated label and prediction. Temporarily disconnect Wi-Fi while a command is active and confirm the serial failsafe; reconnect, verify the IP and acquire a new session. Actual radio-loss behavior must be checked on hardware.
+   Sign in manually as well, press/release W then A without clicking an acquisition button. Correlate the accepted commands with actual serial output. Capture sensors and confirm the simulated label and prediction. Temporarily disconnect Wi-Fi while a command is active and confirm the serial failsafe; reconnect, verify the IP and release/repress a movement key. Actual radio-loss behavior must be checked on hardware.
 
 ## One board or two boards
 
@@ -165,6 +165,11 @@ The following is an example, not a recorded hardware result:
 [CONTROL] Session acquired
 [CMD] FORWARD speed=150
 [SIMULATION] FORWARD accepted; hardware output disabled
+[CMD] STOP speed=0
+[SIMULATION] STOP accepted; hardware output disabled
+[CONTROL] Session acquired
+[CMD] LEFT speed=0
+[SIMULATION] LEFT accepted; hardware output disabled
 [CMD] STOP speed=0
 [SIMULATION] STOP accepted; hardware output disabled
 [SENSOR] SIMULATION ph=6.5 temperature=25.0 humidity=60.0

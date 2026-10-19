@@ -20,7 +20,6 @@ const text = selector => page.locator(selector).innerText();
 async function contains(selector, expected) {
     await page.waitForFunction(([s,t])=>document.querySelector(s)?.textContent?.includes(t), [selector,expected], {timeout:10000});
 }
-async function acquire(){await page.locator('#AcquireControl').click();await contains('#movementStatus','Control ready');}
 async function key(key, expected){await page.keyboard.down(key);await contains('#movementStatus',`${expected} accepted`);}
 try {
     let response=await page.goto(base+'/login'); assert.equal(response.status(),200);
@@ -36,24 +35,76 @@ try {
     const cookie=(await context.cookies()).find(c=>c.name==='JSESSIONID');
     assert.equal(cookie.httpOnly,true); assert.equal(cookie.sameSite,'Strict');
     const noCsrf=await context.request.post(base+'/movement/session'); assert.equal(noCsrf.status(),403);
-    await acquire();
     await key('w','FORWARD'); await key('a','LEFT');
     await page.keyboard.up('a'); await contains('#movementStatus','FORWARD accepted');
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
     for (const [letter,command] of [['s','BACKWARD'],['d','RIGHT']]) {
-        await acquire(); await key(letter,command); await page.keyboard.up(letter); await contains('#movementStatus','STOP accepted');
+        await key(letter,command); await page.keyboard.up(letter); await contains('#movementStatus','STOP accepted');
     }
     // Exercise STOP while a key is held, then ensure release cannot restart movement.
-    await acquire(); await key('w','FORWARD'); await page.locator('#StopMovement').click();
+    await key('w','FORWARD'); await page.locator('#StopMovement').click();
     await contains('#movementStatus','STOP accepted'); await page.keyboard.up('w');
-    await acquire(); await contains('#movementStatus','Control expired');
-    await page.keyboard.press('w'); await contains('#movementStatus','Acquire control before moving');
+    // Repeated keydown while physically held must not restart after emergency STOP.
+    const stoppedCount=movement.length;
+    await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'w',repeat:true,bubbles:true})));
+    await page.waitForTimeout(350); assert.equal(movement.length,stoppedCount);
+    // Heartbeats keep a held direction alive past the firmware watchdog window.
+    await key('w','FORWARD'); await page.waitForTimeout(3200);
+    assert.ok(movement.filter(r=>r.command==='FORWARD').length>=10);
+    await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
+    // Browser blur clears held keys; restoring focus does not restart.
+    await key('a','LEFT'); await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+    await contains('#movementStatus','STOP accepted');
+    const blurCount=movement.length; await page.waitForTimeout(350); assert.equal(movement.length,blurCount);
+    await page.keyboard.up('a');
+    await key('w','FORWARD');
     // An editable dashboard field must stop control and ignore WASD typing.
-    await acquire();
     await page.evaluate(()=>{const input=document.createElement('input');input.id='test-text-field';document.body.append(input);input.focus();});
     await contains('#movementStatus','STOP accepted');
     const count=movement.length; await page.locator('#test-text-field').pressSequentially('wasd');
     assert.equal(movement.length,count); await page.locator('#test-text-field').evaluate(el=>el.remove());
+    // Delay a real acquisition response until after release; only STOP may follow it.
+    let releaseAcquisition, acquisitionArrived;
+    const arrival=new Promise(resolve=>{acquisitionArrived=resolve;});
+    const gate=new Promise(resolve=>{releaseAcquisition=resolve;});
+    await page.route('**/movement/session',async route=>{
+        const response=await route.fetch(); acquisitionArrived(); await gate; await route.fulfill({response});
+    });
+    const acquireCount=movement.length;
+    await page.keyboard.down('w'); await arrival; await page.keyboard.up('w');
+    releaseAcquisition(); await contains('#movementStatus','STOP accepted');
+    assert.deepEqual(movement.slice(acquireCount).map(r=>r.command),['STOP']);
+    await page.unroute('**/movement/session');
+    // Hold FORWARD before forwarding to Spring so STOP wins the race and FORWARD gets 409.
+    let releaseMove, moveArrived;
+    const moveArrival=new Promise(resolve=>{moveArrived=resolve;});
+    const moveGate=new Promise(resolve=>{releaseMove=resolve;});
+    await page.route('**/movement',async route=>{
+        if(route.request().postDataJSON().command==='FORWARD'){moveArrived();await moveGate;}
+        await route.continue();
+    });
+    await page.keyboard.down('w'); await moveArrival; await page.keyboard.up('w');
+    await contains('#movementStatus','STOP accepted');
+    const rejected=page.waitForResponse(r=>new URL(r.url()).pathname==='/movement' && r.status()===409);
+    releaseMove();await rejected;await page.waitForTimeout(100);
+    assert.match(await text('#movementStatus'),/STOP accepted/);
+    await page.unroute('**/movement');
+    // Genuine short presses through the complete stack, followed by fresh actions.
+    for(const letter of ['w','a','s','d']){
+        await page.keyboard.down(letter);await page.waitForTimeout(50);await page.keyboard.up(letter);
+        await contains('#movementStatus','STOP accepted');
+    }
+    // All editable targets ignore robot keys; entering them also cancels movement.
+    for(const tag of ['textarea','div']){
+        await page.evaluate(tag=>{const el=document.createElement(tag);el.id='editable-test';if(tag==='div')el.contentEditable='true';document.body.append(el);el.focus();},tag);
+        const before=movement.length;await page.locator('#editable-test').pressSequentially('wasd');
+        assert.equal(movement.length,before);await page.locator('#editable-test').evaluate(el=>el.remove());
+    }
+    await key('w','FORWARD');
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+    await contains('#movementStatus','STOP accepted');
+    await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+    await page.keyboard.up('w');
     const captureResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/sensors/capture');
     await page.locator('#CaptureData').click();
     assert.equal(await text('#buttonText'),'Capturing…');
@@ -70,13 +121,24 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await page.unroute('**/sensors/capture');
     await page.route('**/movement/session',route=>route.fulfill({status:502,contentType:'application/problem+json',body:'{"status":502}'}));
-    await acquireFailed(); await page.unroute('**/movement/session');
+    await page.keyboard.down('w'); await contains('#movementStatus','Device unreachable');
+    const failureCount=movement.length; await page.waitForTimeout(400); assert.equal(movement.length,failureCount);
+    await page.keyboard.up('w'); await page.unroute('**/movement/session');
+    // A movement transport failure clears held keys and must survive the cleanup STOP ack.
+    await page.route('**/movement',route=>route.request().postDataJSON().command==='FORWARD'
+        ? route.abort('failed') : route.continue());
+    await page.keyboard.down('w'); await contains('#movementStatus','Connection lost');
+    await contains('#movementStatus','STOP accepted');
+    const failedMovementCount=movement.length;
+    await page.keyboard.down('w');await page.waitForTimeout(350);
+    assert.equal(movement.length,failedMovementCount);
+    await page.keyboard.up('w');await page.unroute('**/movement');
+    await key('a','LEFT');await page.keyboard.up('a');await contains('#movementStatus','STOP accepted');
     await page.locator('#SignOut').click(); await contains('#authStatus','Sign in to use the controls');
     const protectedRead=await context.request.get(base+'/sensors'); assert.equal(protectedRead.status(),401);
     assert.equal(await page.locator('#CaptureData').isDisabled(),true);
     assert.deepEqual(errors,[]);
     // Logged-out screenshots contain no operator name or secret fields.
     if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});await page.goto(base+'/login');await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/login.png',fullPage:true});}
-    console.log('PASS browser E2E: login failure/success, CSRF, cookies, WASD, priority/release, STOP, expiry, typing guard, capture, real ML, persisted reload, errors, logout');
+    console.log('PASS browser E2E: login failure/success, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors, logout');
 } finally { await context.close(); await browser.close(); }
-async function acquireFailed(){await page.locator('#AcquireControl').click();await contains('#movementStatus','Device unreachable');}
