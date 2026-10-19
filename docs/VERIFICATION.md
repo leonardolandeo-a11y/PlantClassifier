@@ -1,3 +1,7 @@
+> Historical reference: firmware roles and sensor configuration were superseded by
+> [DUAL_ESP32_SETUP.md](DUAL_ESP32_SETUP.md). Do not use the old shared-device or
+> sensor-simulation/calibration instructions below for the current sensor firmware.
+
 # Final implementation verification — 2026-10-18
 
 Software implementation and integration validation completed in the existing `plantclassifier-lab` environment. **Physical ESP32 validation is not complete.** Unrestricted Arduino CLI discovery returned `detected_ports: []`; no `/dev/ttyUSB*` or `/dev/ttyACM*` device was visible. Authenticated, read-only `/status` checks against the two device URLs configured in `.env.lab` failed to connect. No firmware was uploaded and no actual serial output was captured.

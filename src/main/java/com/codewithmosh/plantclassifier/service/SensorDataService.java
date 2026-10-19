@@ -35,6 +35,12 @@ public class SensorDataService {
     private static boolean inRange(Double value, double min, double max) {
         return value != null && Double.isFinite(value) && value >= min && value <= max;
     }
+    private static String source(tools.jackson.databind.JsonNode json, String field, String... allowed) {
+        if (!json.has(field) || json.get(field).isNull()) return null; // Legacy origin unknown.
+        String value = DeviceResponse.text(json, field);
+        if (value.equals("software") || java.util.Arrays.asList(allowed).contains(value)) return value;
+        throw DeviceResponse.invalid();
+    }
     public CaptureResponse captureData() {
         if (!capacity.tryAcquire()) throw new SystemFailure(503, "capture-busy", "Capture capacity is busy");
         try {
@@ -49,6 +55,12 @@ public class SensorDataService {
             SensorData data = new SensorData();
             data.setPh(reading.ph()); data.setTemperature(reading.temperature()); data.setHumidity(reading.humidity());
             data.setCapturedAt(Instant.now()); data.setSimulated(reading.simulated());
+            data.setTemperatureSource(source(json, "temperatureSource", "dht11"));
+            data.setHumiditySource(source(json, "humiditySource", "dht11"));
+            data.setPhSource(source(json, "phSource", "potentiometer", "calibrated-ph-probe"));
+            if ("potentiometer".equals(data.getPhSource()) || "software".equals(data.getPhSource())
+                    || "software".equals(data.getTemperatureSource()) || "software".equals(data.getHumiditySource()))
+                data.setSimulated(true);
             data.setPredictionStatus("PENDING");
             // This commit is independent of prediction. Do not wrap this method in a database transaction.
             data = repository.saveAndFlush(data);

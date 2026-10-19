@@ -18,7 +18,7 @@ class PostgresMigrationTest {
     }
     @Test void initializesFreshPostgresDatabase() throws Exception {
         String schema="test_"+UUID.randomUUID().toString().replace("-","");
-        var result=flyway(schema).migrate(); assertEquals(2,result.migrationsExecuted);
+        var result=flyway(schema).migrate(); assertEquals(3,result.migrationsExecuted);
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,captured_at,simulated,prediction_status) VALUES(nextval('sensor_data_seq'),7,20,60,CURRENT_TIMESTAMP,true,'PENDING')");

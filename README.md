@@ -117,22 +117,15 @@ npm run watch      # Watches both with coordinated process cleanup
 
 Commit regenerated `static/js` and `static/css` with source changes. CI checks for drift. The dashboard retains its dark visual layout. Acquire control, then press W/A/S/D within 1.5 seconds. Last pressed key wins; releasing that key resumes a remaining held key. Steering-only commands stop propulsion. STOP, loss of focus or a failed command closes control; acquire again to resume. See [protocol](docs/CONTROL_PROTOCOL.md).
 
-## ESP32 simulation: verify without motors
+## Dedicated sensor and movement ESP32 boards
 
-See the complete [USB-only lab and simulation guide](docs/USB_SIMULATION.md) for the working login, software ESP32, one/two-board deployment, browser tests, safe compile/upload procedure and Serial Monitor instructions.
-
-1. Install Arduino ESP32 Core 3.x, ArduinoJson 7 (DHT libraries are required only for real sensor mode).
-2. In `ESP32/PlantClassifier`, copy `wifi_config.example.h` to `wifi_config.h`. Enter Wi-Fi details and the same `DEVICE_TOKEN` as Spring. Keep `SIMULATION_MODE=1` and `SENSOR_SIMULATION_MODE=1`.
-3. Open `PlantClassifier.ino`, select the correct ESP32 board/port, compile and upload. Open Serial Monitor at 115200 baud and obtain the device IP.
-4. Set both `ESP32_URL` and `MOVEMENT_ESP32_URL` to that address. Start Spring, sign in, and capture data. The dashboard must identify simulated measurements.
-5. Acquire control and press W. Confirm the normalized command in Serial Monitor and an **accepted (simulated)** acknowledgement in the dashboard. Release all keys; STOP closes the epoch.
-6. Test focus loss and network loss. Verify stale commands return 409, unauthorized requests return 401 and the watchdog stops commands. This is communication/protocol validation, not evidence of motor movement.
-
-## Physical firmware and real sensors
-
-For the robot use `ESP32/Movement/Movement.ino` with ESP32Servo, ArduinoJson 7 and its own ignored `wifi_config.h`. Pin and PWM values above are preserved. This sketch now defaults to safe simulation; real actuation requires explicitly setting `SIMULATION_MODE=0`. Keep `ENABLE_SELFTEST_ENDPOINT=0`; `/test` is absent by default. Diagnostic builds may explicitly set it to 1: authenticated `POST /test` with the same session/sequence/deadline envelope (`command=FORWARD`, `speed=200`) after acquiring control commands forward PWM 200 for at most one second, while normal HTTP processing, STOP and Wi-Fi checks continue. It is never a proof of physical movement. Keep wheels raised.
-
-For real environmental readings, use the sensor sketch with a connected DHT11 and an electrically compatible pH interface. Calibrate against certified pH 7 and pH 4 buffers at controlled temperature: wait for stabilized ADC readings, record `PH_ADC_AT_7` and `PH_ADC_AT_4` in local configuration, verify with an independent buffer and repeat as required by the probe. Set `SENSOR_SIMULATION_MODE=0` only after calibration. The simple linear mapping has no temperature compensation and is not a laboratory accuracy guarantee. Failed DHT reads, invalid calibration/output and non-finite values produce 503; raw ADC data is never labeled calibrated pH by default.
+See [Dual ESP32 setup](docs/DUAL_ESP32_SETUP.md) for wiring, firmware, configuration,
+compile-only checks and end-to-end validation. Sensor ESP32 #1 runs `PlantClassifier.ino`
+with physical DHT11 readings and **pH (potentiometer simulation)** from GPIO34.
+Movement ESP32 #2 runs `Movement.ino`, with motor simulation enabled by default.
+Set `ESP32_URL` and `MOVEMENT_ESP32_URL` to their separate addresses.
+No sensor firmware movement endpoints or movement firmware capture endpoint exist.
+Do not flash boards or energize motors without separate approval.
 
 ## REST API and curl
 

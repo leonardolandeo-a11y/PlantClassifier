@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 
-def test_device(base, token, capture=True):
+def test_device(base, token, capture=False):
     def request(path, data=None, authenticated=True, expected=200):
         headers = {'Content-Type': 'application/json'}
         if authenticated:
@@ -26,14 +26,20 @@ def test_device(base, token, capture=True):
 
     request('/status', authenticated=False, expected=401)
     status = request('/status')
+    if status.get('role') == 'sensor':
+        reading = request('/capture')
+        assert 0 <= reading['ph'] <= 14
+        assert reading['phSource'] in ('software', 'potentiometer')
+        assert 0 <= reading['temperature'] <= 50 and 20 <= reading['humidity'] <= 80
+        request('/capture', authenticated=False, expected=401)
+        request('/movement', {}, expected=404)
+        request('/control-session', {}, expected=404)
+        print('PASS sensor: sources, authentication, role isolation')
+        return
     assert status.get('mode') == 'simulation' and status.get('hardwareOutputEnabled') is False, 'Refusing commands: simulation safety not verified'
+    request('/capture', expected=404)
     for path in ('/control-session', '/movement'):
         request(path, {}, authenticated=False, expected=401)
-    if capture:
-        request('/capture', authenticated=False, expected=401)
-        reading = request('/capture')
-        assert reading['simulated'] is True
-        assert 0 <= reading['ph'] <= 14 and -40 <= reading['temperature'] <= 85 and 0 <= reading['humidity'] <= 100
     session = request('/control-session', {})
     origin = time.monotonic()
 
@@ -69,4 +75,4 @@ if __name__ == '__main__':
     parser.add_argument('--url', required=True)
     parser.add_argument('--no-capture', action='store_true')
     args = parser.parse_args()
-    test_device(args.url, os.environ['DEVICE_TOKEN'], not args.no_capture)
+    test_device(args.url, os.environ['DEVICE_TOKEN'], False)

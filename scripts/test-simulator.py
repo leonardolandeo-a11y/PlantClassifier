@@ -17,13 +17,14 @@ if __name__ == '__main__':
     simulator = module('simulator', 'esp32-simulator.py')
     tests = module('device_tests', 'test-device.py')
     token = secrets.token_hex(32)
-    server = simulator.make_server('127.0.0.1', 0, token)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        tests.test_device(f'http://127.0.0.1:{server.server_port}', token)
-    finally:
-        server.simulator_stop.set()
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    for role in ("sensor", "movement"):
+        server = simulator.make_server('127.0.0.1', 0, token, role)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            tests.test_device(f'http://127.0.0.1:{server.server_port}', token)
+        finally:
+            server.simulator_stop.set()
+            server.shutdown()
+            server.server_close()
+            thread.join()

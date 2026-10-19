@@ -21,7 +21,6 @@
 
 WebServer server(80);
 #include "control_protocol.h"
-#include "simulated_capture.h"
 
 // ============================================================
 // Existing movement board pin assignments
@@ -59,7 +58,7 @@ void sendStatus() {
   doc["status"] = "online";
   doc["simulated"] = bool(SIMULATION_MODE);
   doc["mode"] = SIMULATION_MODE ? "simulation" : "hardware";
-  doc["sensorSimulated"] = bool(SENSOR_SIMULATION_MODE);
+  doc["role"] = "movement";
   doc["hardwareOutputEnabled"] = !bool(SIMULATION_MODE);
   doc["controlActive"] = gate.active;
   doc["actuatorsReady"] = !SIMULATION_MODE && pwmOK && servoOK;
@@ -176,9 +175,6 @@ void setup() {
   configureControl();
   server.on("/status", HTTP_GET, []() { if (authorized()) sendStatus(); });
   server.on("/movement", HTTP_POST, handleMovement);
-#if SENSOR_SIMULATION_MODE
-  server.on("/capture", HTTP_GET, simulatedCapture);
-#endif
 #if ENABLE_SELFTEST_ENDPOINT
   server.on("/test", HTTP_POST, []() {
     JsonDocument doc;

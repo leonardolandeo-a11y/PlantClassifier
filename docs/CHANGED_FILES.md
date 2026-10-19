@@ -1,3 +1,7 @@
+> Historical reference: firmware roles and sensor configuration were superseded by
+> [DUAL_ESP32_SETUP.md](DUAL_ESP32_SETUP.md). Do not use the old shared-device or
+> sensor-simulation/calibration instructions below for the current sensor firmware.
+
 # Final integration changes — 2026-10-18
 
 | Files | Purpose |

@@ -1,3 +1,7 @@
+> Historical reference: firmware roles and sensor configuration were superseded by
+> [DUAL_ESP32_SETUP.md](DUAL_ESP32_SETUP.md). Do not use the old shared-device or
+> sensor-simulation/calibration instructions below for the current sensor firmware.
+
 # Real movement hardware setup
 
 **Activation is blocked until the owner verifies the wiring, component specifications,

@@ -18,9 +18,11 @@ class SensorPersistenceTest {
             SensorData row=new SensorData();
             row.setPh(7); row.setTemperature(20+i); row.setHumidity(60);
             row.setCapturedAt(Instant.parse("2026-01-01T00:00:00Z"));
+            row.setTemperatureSource("dht11"); row.setHumiditySource("dht11"); row.setPhSource("potentiometer");
             row.setSimulated(true); row.setPredictionStatus("PENDING"); repository.saveAndFlush(row);
         }
         var result=repository.findTopByOrderByIdDesc().orElseThrow();
+        assertEquals("potentiometer",result.getPhSource()); assertEquals("dht11",result.getTemperatureSource());
         assertEquals(22,result.getTemperature()); assertEquals(Instant.parse("2026-01-01T00:00:00Z"),result.getCapturedAt());
     }
 }

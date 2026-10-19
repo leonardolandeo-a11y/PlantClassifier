@@ -18,6 +18,9 @@ public class SensorData {
     // Backend reception time in UTC. Null means a legacy measurement with unknown capture time.
     private Instant capturedAt;
     private Boolean simulated;
+    private String temperatureSource;
+    private String humiditySource;
+    private String phSource;
     private String prediction;
     @Column(nullable = false) private String predictionStatus;
     private String predictionError;

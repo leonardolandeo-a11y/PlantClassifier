@@ -32,7 +32,9 @@ class DeviceState:
             print('[FAILSAFE] Control lost -> STOP (simulated)', flush=True)
 
 
-def make_server(host, port, token):
+def make_server(host, port, token, role="movement"):
+    if role not in ("sensor", "movement"):
+        raise ValueError("Choose sensor or movement role")
     if len(token) < 32 or token.startswith('REPLACE_'):
         raise ValueError('Set DEVICE_TOKEN with at least 32 characters')
     state = DeviceState()
@@ -60,18 +62,26 @@ def make_server(host, port, token):
                 return
             with state.lock:
                 state.expire()
-                if self.path == '/status':
+                if self.path == '/status' and role == 'sensor':
+                    self.reply(200, {'status': 'online', 'role': 'sensor', 'mode': 'simulation',
+                                    'simulated': True, 'hardwareOutputEnabled': False,
+                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software'})
+                elif self.path == '/status':
                     self.reply(200, {'status': 'online', 'mode': 'simulation', 'simulated': True,
-                                    'sensorSimulated': True, 'hardwareOutputEnabled': False,
+                                    'role': role, 'hardwareOutputEnabled': False,
                                     'controlActive': state.session is not None,
                                     'command': state.command, 'speed': state.speed})
-                elif self.path == '/capture':
+                elif self.path == '/capture' and role == 'sensor':
                     print('[SENSOR] SIMULATION ph=6.5 temperature=25.0 humidity=60.0', flush=True)
-                    self.reply(200, {'ph': 6.5, 'temperature': 25.0, 'humidity': 60.0, 'simulated': True})
+                    self.reply(200, {'ph': 6.5, 'temperature': 25.0, 'humidity': 60.0, 'simulated': True,
+                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software'})
                 else:
                     self.reply(404, {'error': 'Not found'})
 
         def do_POST(self):
+            if role == "sensor":
+                self.reply(404, {"error": "Not found"})
+                return
             if not self.authorized():
                 return
             with state.lock:
@@ -134,8 +144,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8081)
+    parser.add_argument('--role', choices=['sensor', 'movement'], default='movement')
     args = parser.parse_args()
-    server = make_server(args.host, args.port, os.environ.get('DEVICE_TOKEN', ''))
+    server = make_server(args.host, args.port, os.environ.get('DEVICE_TOKEN', ''), args.role)
     print('[MODE] SOFTWARE SIMULATION - NO HARDWARE ACCESS', flush=True)
     try:
         server.serve_forever()

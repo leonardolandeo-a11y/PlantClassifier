@@ -36,6 +36,30 @@ class SensorDataServiceTest {
         assertEquals(7,result.ph()); assertEquals("arroz",result.prediction()); assertEquals("SUCCEEDED",result.predictionStatus());
         assertFalse(result.capturedAt().isBefore(before)); verify(repository,times(2)).saveAndFlush(any()); server.verify();
     }
+    @Test void mixedProvenancePersistsAndKeepsModelFeatureOrder() {
+        reading("""
+                {"ph":6.5,"temperature":25,"humidity":60,"simulated":false,
+                 "temperatureSource":"dht11","humiditySource":"dht11","phSource":"potentiometer"}
+                """);
+        when(ml.predict(25,60,6.5)).thenReturn("arroz");
+        var result=service.captureData();
+        assertEquals("dht11",result.temperatureSource());
+        assertEquals("dht11",result.humiditySource());
+        assertEquals("potentiometer",result.phSource());
+        assertTrue(result.simulated());
+        verify(ml).predict(25,60,6.5);
+        verify(repository,times(2)).saveAndFlush(argThat(row -> "potentiometer".equals(row.getPhSource())));
+    }
+    @Test void badSourceAndSensorFailureCannotBecomeSyntheticMeasurements() {
+        reading("""
+                {"ph":6.5,"temperature":25,"humidity":60,"simulated":true,"phSource":"dht11"}
+                """);
+        assertThrows(SystemFailure.class,()->service.captureData());
+        server.reset();
+        server.expect(requestTo("http://sensor.test/capture")).andRespond(withStatus(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE));
+        assertThrows(SystemFailure.class,()->service.captureData());
+        verifyNoInteractions(repository,ml);
+    }
     @Test void invalidAndMissingReadingsAreNotPersisted() {
         for(String json:new String[]{"", "{}", "{\"ph\":15,\"temperature\":20,\"humidity\":50,\"simulated\":true}",
                 "{\"ph\":7,\"temperature\":100,\"humidity\":50,\"simulated\":true}",

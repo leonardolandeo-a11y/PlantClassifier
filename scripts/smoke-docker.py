@@ -18,9 +18,11 @@ import urllib.request
 
 def inside():
     from esp32_simulator import make_server
-    server = make_server("127.0.0.1", 18080, os.environ["DEVICE_TOKEN"])
+    server = make_server("127.0.0.1", 18080, os.environ["DEVICE_TOKEN"], "movement")
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
+    sensor = make_server("127.0.0.1", 18081, os.environ["DEVICE_TOKEN"], "sensor")
+    threading.Thread(target=sensor.serve_forever, daemon=True).start()
     cookies = http.cookiejar.CookieJar()
     client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
     base = "http://127.0.0.1:8080"
@@ -65,10 +67,14 @@ def inside():
             assert capture["predictionStatus"] == "SUCCEEDED", capture["predictionStatus"]
             assert capture["capturedAt"] and capture["simulated"] is True
             assert capture["temperature"] == 25 and capture["prediction"]
+        assert capture["phSource"] == "software"
         latest = get("/sensors")
         assert latest["id"] == capture["id"] and latest["prediction"] == capture["prediction"]
         print("Docker E2E passed: login/CSRF, unauthorized rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:
+        sensor.simulator_stop.set()
+        sensor.shutdown()
+        sensor.server_close()
         server.simulator_stop.set()
         server.shutdown()
         server.server_close()
@@ -96,7 +102,7 @@ def outside():
             "-e", "SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/plant_test",
             "-e", "SPRING_DATASOURCE_USERNAME", "-e", "SPRING_DATASOURCE_PASSWORD",
             "-e", "CONTROL_USERNAME", "-e", "CONTROL_PASSWORD", "-e", "DEVICE_TOKEN",
-            "-e", "ESP32_URL=http://127.0.0.1:18080", "-e", "MOVEMENT_ESP32_URL=http://127.0.0.1:18080",
+            "-e", "ESP32_URL=http://127.0.0.1:18081", "-e", "MOVEMENT_ESP32_URL=http://127.0.0.1:18080",
             "-e", "ML_WORKING_DIRECTORY=/app/MLClassification", "-e", "ML_PYTHON_PATH=/opt/venv/bin/python3",
             os.environ.get("PLANT_TEST_IMAGE", "plantclassifier:reliability"))
         run("docker", "cp", str(Path(__file__).resolve()), application + ":/tmp/smoke.py")

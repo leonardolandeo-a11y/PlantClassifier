@@ -1,6 +1,7 @@
 import {KeyboardState, MovementControl, ControlRejected, type Acknowledgement, type MovementRequest} from "./control.js";
 interface SensorData {
     ph: number; temperature: number; humidity: number; capturedAt: string | null;
+    temperatureSource?: string | null; humiditySource?: string | null; phSource?: string | null;
     simulated: boolean | null; prediction: string | null; predictionStatus: string; predictionError: string | null;
 }
 function required<T extends Element>(selector: string): T {
@@ -47,7 +48,7 @@ function update(data: SensorData): void {
     required<HTMLElement>("#humidity").textContent = data.humidity.toFixed(1);
     prediction.textContent = data.predictionStatus === "SUCCEEDED" ? data.prediction :
         `Measurement saved — prediction ${data.predictionStatus.toLowerCase()}${data.predictionError ? ` (${data.predictionError})` : ""}`;
-    sensorStatus.textContent = `${data.simulated === null ? "Origin unknown" : data.simulated ? "Simulated measurements" : "Sensor measurements"} · ${data.capturedAt ? new Date(data.capturedAt).toLocaleString() : "Legacy time unknown"}`;
+    sensorStatus.textContent = `${data.phSource === "potentiometer" ? `Temperature: ${data.temperatureSource ?? "unknown"}; humidity: ${data.humiditySource ?? "unknown"}; pH (potentiometer simulation)` : data.phSource === "software" ? "Software simulated measurements" : data.simulated === null ? "Origin unknown" : data.simulated ? "Simulated measurements (sources unknown)" : "Sensor measurements"} · ${data.capturedAt ? new Date(data.capturedAt).toLocaleString() : "Legacy time unknown"}`;
 }
 async function load(): Promise<void> {
     try {

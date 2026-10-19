@@ -110,11 +110,18 @@ try {
     assert.equal(await text('#buttonText'),'Capturing…');
     const capture=await (await captureResponse).json();
     assert.equal(capture.predictionStatus,'SUCCEEDED'); assert.equal(capture.simulated,true); assert.ok(capture.id);
-    await contains('#sensorStatus','Simulated measurements');
+    await contains('#sensorStatus','Software simulated measurements');
     await contains('#prediction',capture.prediction);
     const latest=await (await context.request.get(base+'/sensors')).json();
     assert.equal(latest.id,capture.id); assert.equal(latest.prediction,capture.prediction);
     await page.reload(); await contains('#prediction',capture.prediction);
+    // Explicit UI fixture for mixed physical/demo provenance; no claim of hardware measurement.
+    await page.route('**/sensors/capture', route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...capture,temperatureSource:'dht11',humiditySource:'dht11',phSource:'potentiometer'})}));
+    await page.locator('#CaptureData').click();
+    await contains('#sensorStatus','pH (potentiometer simulation)');
+    await contains('#sensorStatus','Temperature: dht11; humidity: dht11');
+    await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
+    await page.unroute('**/sensors/capture');
     // Failure rendering uses a deliberately failed transport; successful paths above are unmocked.
     await page.route('**/sensors/capture',route=>route.fulfill({status:504,contentType:'application/problem+json',body:'{"status":504}'}));
     await page.locator('#CaptureData').click(); await contains('#sensorStatus','Device timed out');
