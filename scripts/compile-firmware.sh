@@ -10,6 +10,9 @@ for sketch in Movement PlantClassifier; do
   cp "ESP32/$sketch/$sketch.ino" "$work/$sketch/"
   cp "ESP32/$sketch/command_gate.h" "ESP32/$sketch/control_protocol.h" \
     "ESP32/$sketch/simulation_config.h" "ESP32/$sketch/simulated_capture.h" "$work/$sketch/"
+  if [ "$sketch" = Movement ]; then
+    cp ESP32/Movement/actuators.h ESP32/Movement/hardware_config.h ESP32/Movement/movement_safety.h "$work/$sketch/"
+  fi
   cat > "$work/$sketch/wifi_config.h" <<'CONFIG'
 #pragma once
 const char* WIFI_SSID = "compile-only";

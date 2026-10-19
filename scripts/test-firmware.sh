@@ -13,3 +13,7 @@ if printf '#define SIMULATION_MODE 1\n#define ENABLE_SELFTEST_ENDPOINT 1\n#inclu
   echo 'FAIL: simulation permits the physical diagnostic endpoint' >&2; exit 1
 fi
 echo 'PASS: simulation rejects physical diagnostic configuration'
+for mode in 0 1; do
+  g++ -std=c++17 -Wall -Wextra -Werror -DSIMULATION_MODE=$mode ESP32/tests/actuators_test.cpp -o "$binary"
+  "$binary"
+done

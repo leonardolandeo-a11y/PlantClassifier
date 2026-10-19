@@ -21,3 +21,12 @@ The pure C++ gate is duplicated in each Arduino sketch folder to keep sketches i
 ## Safe simulation and logout
 
 Both sketches default to movement simulation with all actuator writes excluded. Movement also provides authenticated synthetic `/capture` by default. `/status` exposes `mode`, `hardwareOutputEnabled`, `sensorSimulated`, and `controlActive`. The HTTP command envelope is unchanged. Logout attempts STOP for the owning HTTP session and invalidates browser authentication. If delivery fails, the device watchdog still expires independently. See [USB simulation procedure](USB_SIMULATION.md).
+
+## Physical actuator interlocks
+
+See [real hardware setup](REAL_HARDWARE_SETUP.md) before activation. Hardware mode rejects
+propulsion unless both motor PWM and steering initialize. An abrupt opposite direction
+stops immediately, returns 409 and invalidates the session; there is no delayed reversal.
+A fresh keypress/session after physical rest and the minimum reversal interval is required.
+The interval also survives STOP/session acquisition. PWM faults return 503 and latch
+unavailable until restart. The keyboard/API contract and simulation behavior are unchanged.

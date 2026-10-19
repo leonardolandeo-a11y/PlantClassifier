@@ -180,3 +180,7 @@ The following is an example, not a recorded hardware result:
 Simulation excludes actuator writes and ESP32Servo entirely at preprocessing time. Status reports disabled hardware output and acknowledgements report `simulated:true`. Synthetic capture avoids ADC/DHT initialization and I/O. STOP, epoch invalidation, duplicate/expired-command rejection and the independent 1500 ms watchdog remain enabled. Wi-Fi loss invalidates the epoch. Physical mode remains an explicit build choice; no physical-mode artifact was uploaded during this implementation.
 
 The dark native login form includes the session-bound CSRF token and posts to Spring Security. Valid login rotates the session and redirects to `/`; invalid login displays a generic error. Logout requires CSRF, attempts an owner-bound STOP and invalidates the session. Public assets expose no device token. Cookies are HttpOnly and SameSite=Strict. `SESSION_COOKIE_SECURE=false` supports this loopback HTTP lab; set it to true with HTTPS for remote deployment. Do not enable Secure cookies on this HTTP-only demo or the browser will not send them over ordinary HTTP.
+
+For the staged transition to physical movement, follow [real hardware setup](REAL_HARDWARE_SETUP.md).
+Do not upload hardware-mode firmware or energize actuators until its component/wiring review
+is complete. Compile-only and mock tests do not validate physical movement.

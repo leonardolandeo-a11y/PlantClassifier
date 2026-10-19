@@ -37,7 +37,7 @@ The manual verification flow is **Browser → Spring Boot → ESP32 → Serial M
 
 ## Hardware
 
-Physical motor firmware keeps the original assignments and initialization order:
+Physical motor firmware keeps the original pin assignments. The bridge is disabled before servo/PWM initialization; see [real hardware setup](docs/REAL_HARDWARE_SETUP.md) before any actuator power is connected:
 
 | Component | Pin / setting |
 |---|---|
