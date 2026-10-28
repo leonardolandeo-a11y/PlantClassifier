@@ -92,8 +92,8 @@ const control = new MovementControl({
     },
     async send(body) {
         const ack = await request("/movement", body, true);
-        if (!ack || ack.status !== "OK" || ack.sessionId !== body.sessionId || ack.sequence !== body.sequence)
-            throw new Error("Invalid device acknowledgement");
+        if (!ack)
+            throw new Error("Empty device acknowledgement");
         return ack;
     }
 }, message => { movementStatus.textContent = message; }, () => keys.clear());

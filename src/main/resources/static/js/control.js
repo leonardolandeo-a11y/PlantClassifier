@@ -16,7 +16,6 @@ export class MovementControl {
     transport;
     status;
     failed;
-    state = "IDLE";
     session = null;
     sequence = 0;
     generation = 0;
@@ -30,6 +29,16 @@ export class MovementControl {
         this.transport = transport;
         this.status = status;
         this.failed = failed;
+    }
+    // UI state is derived; the flags track asynchronous work that can overlap during STOP.
+    get state() {
+        if (this.fault)
+            return "ERROR";
+        if (this.stopping || (this.acquiring && this.desired === "STOP"))
+            return "STOPPING";
+        if (this.acquiring)
+            return "ACQUIRING";
+        return this.session ? "ACTIVE" : "IDLE";
     }
     set(command) {
         if (command === "STOP") {
@@ -55,7 +64,6 @@ export class MovementControl {
         this.fault = null;
         this.acquiring = true;
         const generation = this.generation;
-        this.state = "ACQUIRING";
         this.status("Connecting to ESP32…");
         try {
             const session = await this.transport.acquire();
@@ -66,9 +74,6 @@ export class MovementControl {
             this.sequence = 0;
             if (generation !== this.generation || this.desired === "STOP") {
                 await this.closeSession();
-            }
-            else {
-                this.state = "ACTIVE";
             }
         }
         catch (error) {
@@ -87,7 +92,6 @@ export class MovementControl {
         if (this.session)
             void this.closeSession();
         else if (this.acquiring || this.stopping) {
-            this.state = "STOPPING";
             this.status("Movement cancelled — awaiting STOP acknowledgement");
         }
     }
@@ -97,19 +101,17 @@ export class MovementControl {
             return;
         this.session = null;
         this.stopping = true;
-        this.state = "STOPPING";
         const request = { command: "STOP", speed: 0, sessionId: session, sequence: ++this.sequence };
         this.status("STOP submitted — awaiting device acknowledgement");
         try {
             const ack = await this.send(request);
-            this.state = this.fault ? "ERROR" : "IDLE";
             this.status(`${this.fault ? this.fault + " · " : ""}Stopped — STOP accepted by ESP32${ack.simulated ? " (simulated)" : " (commanded state)"}`);
         }
         catch (error) {
+            this.fault = message(error);
             this.desired = "STOP";
             this.generation++;
             this.failed();
-            this.state = "ERROR";
             this.status(`Connection lost / control unavailable. STOP unconfirmed: ${message(error)}. Device watchdog remains active. Release keys and press again.`);
         }
         finally {
@@ -160,7 +162,6 @@ export class MovementControl {
         this.fault = `Connection lost / control unavailable: ${message(error)}. Release keys and press again.`;
         this.stop();
         this.failed();
-        this.state = "ERROR";
         this.status(`Connection lost / control unavailable: ${message(error)}. Movement cancelled; release keys and press again.${this.stopping ? " STOP awaiting acknowledgement." : " Device state unconfirmed; watchdog remains active."}`);
     }
 }
