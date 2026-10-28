@@ -30,6 +30,10 @@ jobs:
         run: git diff --exit-code -- src/main/resources/static/js src/main/resources/static/css
       - run: ./mvnw -B verify
       - run: scripts/test-postgres.sh
+      - name: Prepare ArduinoJson for firmware host tests
+        run: |
+          git clone --depth 1 --branch v7.4.2 https://github.com/bblanchon/ArduinoJson.git "$RUNNER_TEMP/ArduinoJson"
+          echo "ARDUINOJSON_INCLUDE=$RUNNER_TEMP/ArduinoJson/src" >> "$GITHUB_ENV"
       - run: scripts/test-firmware.sh
       - run: python scripts/test-simulator.py
       - run: pip install -r MLClassification/requirements.txt
