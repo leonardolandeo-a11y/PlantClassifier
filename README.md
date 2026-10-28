@@ -25,8 +25,7 @@ flowchart TD
 
 Necesitas Docker con Compose. Desde la raíz, copia `.env.example` a `.env` **solo si
 no existe**, configura credenciales privadas y las dos direcciones ESP32. No uses los
-valores `REPLACE_`. `CONTROL_PASSWORD` necesita al menos 12 caracteres y `DEVICE_TOKEN`
-al menos 32; el token debe coincidir en Spring y ambos ESP32. Puedes generar valores
+valores `REPLACE_`. `DEVICE_TOKEN` necesita al menos 32 caracteres; el token debe coincidir en Spring y ambos ESP32. Puedes generar valores
 independientes con `openssl rand -hex 32`.
 
 ```bash
@@ -35,7 +34,8 @@ test -f .env || cp .env.example .env
 docker compose up -d --build --wait
 ```
 
-Abre `http://localhost:8080`, inicia sesión y pulsa **Capture Data** o usa W/A/S/D.
+Abre `http://127.0.0.1:18080`: el dashboard permite usar **Capture Data** y W/A/S/D
+directamente, sin login. Compose publica exclusivamente en `127.0.0.1`.
 Si ya tienes datos, conserva el mismo nombre de proyecto Compose y volumen. Para una
 base anterior a Flyway, sigue [MIGRATIONS](docs/MIGRATIONS.md) antes de arrancar.
 Nunca necesitas borrar volúmenes para ejecutar esta guía.
@@ -70,8 +70,8 @@ La última medición se consulta directamente en la base de datos.
 | Clase o archivo principal | Responsabilidad |
 |---|---|
 | `PlantClassifierApplication` | Arrancar Spring Boot |
-| `SecurityConfig`, `DeviceClients` | Login/CSRF y conexiones autenticadas con límites de tiempo |
-| `LoginController`, `SessionController` | Formulario, estado de sesión y token CSRF |
+| `SecurityConfig`, `DeviceClients` | CSRF y conexiones autenticadas con límites de tiempo |
+| `SessionController` | Token CSRF vinculado a la sesión HTTP anónima |
 | `MovementController`, `SensorDataController` | Recibir solicitudes HTTP válidas |
 | `MovementService` | Propietario del control, secuencias, vencimiento y confirmaciones |
 | `SensorDataService` | Captura, validación, persistencia y predicción |
@@ -86,7 +86,11 @@ La última medición se consulta directamente en la base de datos.
 
 ## Seguridad y límites
 
-Se conservan login, CSRF, token privado del dispositivo, secuencias crecientes y sesiones
+Uso exclusivamente local y supervisado: cualquier usuario o proceso con acceso a esta
+computadora puede operar el robot y capturar datos. No publiques la aplicación en la LAN
+ni Internet, tampoco mediante túneles o proxies. CSRF no sustituye el control de acceso.
+
+Se conservan CSRF, token privado del dispositivo, secuencias crecientes y sesiones
 que STOP invalida. Un FORWARD retrasado no puede reactivar esa sesión. También se
 conservan watchdog de 1500 ms, STOP al perder Wi-Fi, interbloqueo de inversión y límites
 de comunicación. Una confirmación acredita aceptación del comando, **no movimiento físico**.

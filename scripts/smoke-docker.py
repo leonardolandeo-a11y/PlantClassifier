@@ -44,17 +44,16 @@ def inside():
                 time.sleep(1)
         else:
             raise RuntimeError("Application did not start")
-        with client.open(base + "/login", timeout=10) as response:
-            assert response.status == 200 and b'name="_csrf"' in response.read()
-        try:
-            post("/movement")
-            raise AssertionError("Unauthenticated movement accepted")
-        except urllib.error.HTTPError as error:
-            assert error.code == 401
-        with post("/login", {"username": os.environ["CONTROL_USERNAME"],
-                             "password": os.environ["CONTROL_PASSWORD"]}, csrf, form=True) as response:
-            assert response.status == 200
-        csrf = get("/csrf")["token"]
+        with client.open(base + "/", timeout=10) as response:
+            dashboard = response.read()
+            assert response.status == 200 and b'id="CaptureData"' in dashboard
+            assert b'id="SignIn"' not in dashboard
+        for path in ["/movement", "/movement/session", "/sensors/capture"]:
+            try:
+                post(path)
+                raise AssertionError("Mutation without CSRF accepted")
+            except urllib.error.HTTPError as error:
+                assert error.code == 403
         with post("/movement/session", token=csrf) as response:
             control = json.load(response)
         for sequence, command in enumerate(["FORWARD", "BACKWARD", "LEFT", "RIGHT", "CENTER", "STOP"], 1):
@@ -70,7 +69,7 @@ def inside():
         assert capture["phSource"] == "software"
         latest = get("/sensors")
         assert latest["id"] == capture["id"] and latest["prediction"] == capture["prediction"]
-        print("Docker E2E passed: login/CSRF, unauthorized rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
+        print("Docker E2E passed: anonymous session/CSRF, missing-CSRF rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:
         sensor.simulator_stop.set()
         sensor.shutdown()
@@ -84,8 +83,7 @@ def outside():
     suffix = secrets.token_hex(4)
     database, application = "plant-smoke-db-" + suffix, "plant-smoke-app-" + suffix
     env = dict(os.environ, POSTGRES_USER="plant_test", POSTGRES_DB="plant_test",
-               POSTGRES_PASSWORD=secrets.token_hex(24), CONTROL_USERNAME="smoke-operator",
-               CONTROL_PASSWORD=secrets.token_hex(24), DEVICE_TOKEN=secrets.token_hex(32))
+               POSTGRES_PASSWORD=secrets.token_hex(24), DEVICE_TOKEN=secrets.token_hex(32))
     env.update(SPRING_DATASOURCE_USERNAME=env["POSTGRES_USER"], SPRING_DATASOURCE_PASSWORD=env["POSTGRES_PASSWORD"])
     def run(*args):
         return subprocess.run(args, check=True, env=env, capture_output=True, text=True).stdout.strip()
@@ -101,7 +99,7 @@ def outside():
         run("docker", "run", "--rm", "-d", "--name", application, "--network", "container:" + database,
             "-e", "SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/plant_test",
             "-e", "SPRING_DATASOURCE_USERNAME", "-e", "SPRING_DATASOURCE_PASSWORD",
-            "-e", "CONTROL_USERNAME", "-e", "CONTROL_PASSWORD", "-e", "DEVICE_TOKEN",
+            "-e", "DEVICE_TOKEN",
             "-e", "ESP32_URL=http://127.0.0.1:18081", "-e", "MOVEMENT_ESP32_URL=http://127.0.0.1:18080",
             "-e", "ML_WORKING_DIRECTORY=/app/MLClassification", "-e", "ML_PYTHON_PATH=/opt/venv/bin/python3",
             os.environ.get("PLANT_TEST_IMAGE", "plantclassifier:reliability"))

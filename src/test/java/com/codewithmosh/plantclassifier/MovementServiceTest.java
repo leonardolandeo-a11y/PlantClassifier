@@ -57,7 +57,7 @@ class MovementServiceTest {
         acquire(); server.expect(requestTo("http://robot.test/movement")).andRespond(withSuccess());
         assertEquals(502,assertThrows(SystemFailure.class,()->service.sendCommand(new MovementRequestDTO("STOP",0,id,1L),"owner")).status());
     }
-    @Test void logoutStopsOnlyTheOwningSession() {
+    @Test void releaseStopsOnlyTheOwningSession() {
         acquire(); service.release("other");
         server.expect(requestTo("http://robot.test/movement"))
                 .andExpect(content().json("{\"command\":\"STOP\",\"speed\":0}"))

@@ -13,17 +13,23 @@ Las credenciales nuevas de `.env` no cambian las de un PostgreSQL ya inicializad
 |---|---|
 | `POSTGRES_DB/USER/PASSWORD` | Inicialización de PostgreSQL en Compose |
 | `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` | JVM nativa; URL habitual `jdbc:postgresql://127.0.0.1:5433/plantclassifier` |
-| `CONTROL_USERNAME/PASSWORD` | Operador del navegador; contraseña ≥12 caracteres |
 | `DEVICE_TOKEN` | Secreto compartido con las dos placas, ≥32 caracteres |
 | `ESP32_URL` | Origen HTTP(S) del ESP32 de sensores |
 | `MOVEMENT_ESP32_URL` | Origen distinto del ESP32 de movimiento |
-| `APP_HOST/PORT`, `POSTGRES_PORT` | Puertos Compose, por defecto `127.0.0.1:8080` y `127.0.0.1:5433` |
+| `APP_PORT`, `POSTGRES_PORT` | Puertos Compose, por defecto `127.0.0.1:18080` y `127.0.0.1:5433` |
 | `ML_PYTHON_PATH` | Python del entorno virtual; Compose lo configura automáticamente |
 | `ML_SCRIPT_PATH`, `ML_WORKING_DIRECTORY` | `predict.py`, `MLClassification` |
 | `ML_TIMEOUT` | 30 s; incluye proceso y lectura de salida |
 | `ESP32_CONNECT_TIMEOUT/READ_TIMEOUT` | Sensores: 2 s / 5 s |
 | `MOVEMENT_CONNECT_TIMEOUT/READ_TIMEOUT` | Movimiento: 300 ms / 500 ms |
 | `SESSION_COOKIE_SECURE` | `true` con HTTPS, `false` para la demostración HTTP local |
+
+Abre `http://127.0.0.1:18080` sin login. Solo se admite uso local y supervisado;
+cualquier usuario o proceso local puede controlar el robot. No expongas la aplicación
+a la LAN, Internet, túneles o proxies. Compose fija la publicación a `127.0.0.1`;
+`APP_PORT` permite conservar un puerto local existente. Las antiguas variables de operador
+no se utilizan; no es necesario editar `.env` ni `.env.lab`. La sesión HTTP anónima
+identifica al controlador y mantiene CSRF; no contiene el token privado del ESP32.
 
 Las URLs no admiten usuario, contraseña, ruta, query ni fragmento. No uses la misma
 placa para ambos roles. Dentro de Docker, localhost identifica el contenedor.
@@ -46,7 +52,8 @@ Abre `pom.xml`, elige JDK 21 y la raíz del repositorio como directorio de traba
 Configura las variables anteriores en IntelliJ, en particular los tres valores
 `SPRING_DATASOURCE_*` y la ruta absoluta `.venv/bin/python` en `ML_PYTHON_PATH`.
 Arranca `PlantClassifierApplication`; desde un terminal con esas variables también
-puedes ejecutar `./mvnw spring-boot:run`.
+puedes ejecutar `./mvnw spring-boot:run`. La JVM nativa escucha en `127.0.0.1:8080`;
+configura `SERVER_PORT=18080` para usar la misma URL local. Mantén `SERVER_ADDRESS=127.0.0.1`.
 `npm run watch` recompila TypeScript y CSS durante el desarrollo y cierra ambos procesos.
 Después de cambiar el frontend, guarda también los JS/CSS generados con `npm run build`.
 
@@ -191,16 +198,16 @@ Maven normal omite las pruebas PostgreSQL si no se configuran sus variables de p
 `test-postgres.sh` crea su propio contenedor desechable, sin volúmenes de usuario;
 `test-postgres.sh -B verify` ejecuta toda la suite contra ese entorno aislado.
 `test-simulator.py` reutiliza `test-device.py` para probar ambos roles; no hay dos
-implementaciones del protocolo de prueba. `smoke-docker.py` prueba login/CSRF → Spring →
+implementaciones del protocolo de prueba. `smoke-docker.py` prueba sesión anónima/CSRF → Spring →
 dos simuladores → PostgreSQL → Python/modelo real, usando contenedores desechables.
 
 Se conserva Playwright porque los tests del controlador no prueban el cableado real
-de eventos DOM, login, blur y peticiones retrasadas. Es una verificación adicional,
+de eventos DOM, acceso sin login, blur y peticiones retrasadas. Es una verificación adicional,
 fuera del workflow principal. Con el overlay ya iniciado:
 
 ```bash
 npx playwright install chromium  # O usar CHROME_PATH con Chrome ya instalado.
-PLANT_BASE_URL=http://127.0.0.1:8080 PLANT_DEVICE_URL=http://127.0.0.1:18081 \
+PLANT_BASE_URL=http://127.0.0.1:18080 PLANT_DEVICE_URL=http://127.0.0.1:18081 \
   node scripts/with-lab-env.mjs .env npm run test:e2e
 ```
 
@@ -211,7 +218,7 @@ sin ejecutar el archivo ni imprimir secretos; por eso se conserva.
 
 ## Diagnóstico y ML
 
-- 401/403: iniciar sesión y renovar CSRF tras login/expiración.
+- 403 del dashboard: recargar la página para renovar CSRF tras la expiración de sesión.
 - 409: sesión vencida, parada o reemplazada; soltar y pulsar de nuevo.
 - 502/504: comprobar ambas IP, red y token; STOP sin confirmación sigue siendo incierto.
 - Sensor 503: revisar DHT11, GPIO22 y pull-up; esperar al menos 2 s entre muestras.
