@@ -16,11 +16,11 @@ Acknowledgements include status, normalized command, commanded speed, simulation
 
 Direct curl access to firmware needs `X-Device-Token`, a fresh session, sequence and a deadline based on `deviceTimeMs`. Keep both requests within the watchdog window; do not copy an old deadline. Normal curl use should go through Spring, which calculates deadlines.
 
-The pure C++ gate is duplicated in each Arduino sketch folder to keep sketches independently uploadable. `scripts/test-firmware.sh` requires these files to remain identical and tests the gate on the host. Full Arduino compilation, HTTP execution on an ESP32 and physical motor tests are separate validations.
+The pure C++ command gate belongs only to the movement sketch. `scripts/test-firmware.sh` tests it, the actuators and the sensor sketch on the host. Full Arduino compilation, HTTP execution on an ESP32 and physical motor tests are separate validations.
 
 ## Safe simulation and logout
 
-Both sketches default to movement simulation with all actuator writes excluded. Movement also provides authenticated synthetic `/capture` by default. `/status` exposes `mode`, `hardwareOutputEnabled`, `sensorSimulated`, and `controlActive`. The HTTP command envelope is unchanged. Logout attempts STOP for the owning HTTP session and invalidates browser authentication. If delivery fails, the device watchdog still expires independently. See [USB simulation procedure](USB_SIMULATION.md).
+The movement sketch defaults to simulation with actuator writes excluded and has no `/capture`. Its `/status` exposes `mode`, `hardwareOutputEnabled`, and `controlActive`. The separate sensor sketch reads DHT11 and a pH demonstration potentiometer, and exposes only `/status` and `/capture`. Software-only simulation uses two Python servers. The HTTP command envelope is unchanged. Logout attempts STOP for the owning HTTP session and invalidates browser authentication. If delivery fails, the device watchdog still expires independently. See [setup and USB procedure](SETUP.md).
 
 ## Physical actuator interlocks
 
