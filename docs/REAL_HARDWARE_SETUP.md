@@ -64,7 +64,6 @@ The safe default remains:
 
 ```cpp
 #define SIMULATION_MODE 1
-#define ENABLE_SELFTEST_ENDPOINT 0
 ```
 
 After the physical review, manually edit only these existing mode lines in the ignored
@@ -72,7 +71,6 @@ After the physical review, manually edit only these existing mode lines in the i
 
 ```cpp
 #define SIMULATION_MODE 0
-#define ENABLE_SELFTEST_ENDPOINT 0
 ```
 
 Do not modify the sensor ESP32 configuration. Hardware code is excluded when SIMULATION_MODE=1.
@@ -165,7 +163,7 @@ heating, unstable power or an initialization fault. Do not re-enable by repeated
 
 ## Restore simulation
 
-Disconnect actuator power first. Set SIMULATION_MODE=1 and ENABLE_SELFTEST_ENDPOINT=0 as shown above,
+Disconnect actuator power first. Set SIMULATION_MODE=1 as shown above,
 compile a **fresh** simulation artifact and upload to the identified movement board:
 
 ```bash

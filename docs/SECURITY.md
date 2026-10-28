@@ -25,7 +25,7 @@ Spring permits anonymous dashboard and sensor access, with an HttpOnly same-site
 
 Anyone with access to the local computer can operate the robot or capture data. CSRF prevents cross-site mutations but does not authenticate local users or processes. Use only for local, supervised demonstrations and never publish the dashboard to other computers or the Internet.
 
-The ESP32 requires `X-Device-Token` on control acquisition, movement, diagnostics, status and capture. Token comparison avoids early content-dependent exits. The physical `/test` route is absent unless explicitly enabled. No CORS permission is granted.
+The ESP32 requires `X-Device-Token` on control acquisition, movement, status and capture. Token comparison avoids early content-dependent exits. The `/test` diagnostic route has been removed. No CORS permission is granted.
 
 ESP32 HTTP is **not encrypted**: a shared token authenticates clients but cannot protect against interception or an active attacker on an untrusted network. Use a trusted isolated Wi-Fi/VLAN with firewall rules allowing only the backend to reach ESP32 HTTP. Do not forward ESP32 or PostgreSQL ports publicly. Secure device provisioning or TLS-capable firmware is future work; this PR does not claim that bare HTTP provides confidentiality.
 

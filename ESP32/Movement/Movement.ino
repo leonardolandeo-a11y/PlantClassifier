@@ -29,20 +29,6 @@ WebServer server(80);
 #include "movement_safety.h"
 
 // ============================================================
-// DIAGNOSTICO ACOTADO Y NO BLOQUEANTE (DISPARADO POR HTTP)
-// ============================================================
-bool diagnosticRunning = false;
-uint32_t diagnosticDeadline = 0;
-bool selfTest() {
-  robotStop();
-  diagnosticRunning = motorDrive(1, 200);
-  lastCommandTime = millis();
-  diagnosticDeadline = lastCommandTime + 1000;
-  Serial.println("[TEST] Commanded forward PWM for at most 1 s; physical movement is not measured");
-  return diagnosticRunning;
-}
-
-// ============================================================
 // RESPUESTAS HTTP
 // ============================================================
 void sendError(int code, const char* message) {
@@ -89,7 +75,6 @@ void handleMovement() {
   String command;
   int speed;
   if (!readCommand(doc, command, speed)) return;
-  diagnosticRunning = false;
 
   if (command == "FORWARD" || command == "BACKWARD") {
 #if !SIMULATION_MODE
@@ -175,32 +160,12 @@ void setup() {
   configureControl();
   server.on("/status", HTTP_GET, []() { if (authorized()) sendStatus(); });
   server.on("/movement", HTTP_POST, handleMovement);
-#if ENABLE_SELFTEST_ENDPOINT
-  server.on("/test", HTTP_POST, []() {
-    JsonDocument doc;
-    String command;
-    int speed;
-    if (!readCommand(doc, command, speed)) return;
-    if (command != "FORWARD" || speed != 200) {
-      robotStop(); gate.invalidate();
-      protocolError(400, "Diagnostic requires FORWARD at speed 200"); return;
-    }
-    if (!selfTest()) {
-      robotStop(); gate.invalidate();
-      protocolError(503, "Diagnostic PWM command failed"); return;
-    }
-    server.send(200, "application/json", "{\"status\":\"test commanded\"}");
-  });
-#endif
   server.begin();
 
   if (WiFi.status() == WL_CONNECTED) Serial.println("[WIFI] Connected");
   Serial.print("[WIFI] IP: ");
   Serial.println(WiFi.localIP());
   Serial.println("[HTTP] Server started");
-#if ENABLE_SELFTEST_ENDPOINT
-  Serial.println("[HTTP] /test habilitado SOLO para diagnostico");
-#endif
 }
 
 void loop() {
@@ -217,13 +182,6 @@ void loop() {
     }
   }
 
-  if (diagnosticRunning) {
-    if (WiFi.status() != WL_CONNECTED || int32_t(millis() - diagnosticDeadline) >= 0) {
-      diagnosticRunning = false;
-      gate.invalidate();
-      robotStop();
-    }
-  }
   checkMovementSafety(WiFi.status() == WL_CONNECTED, millis());
   delay(1);
 }

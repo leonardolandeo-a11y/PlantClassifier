@@ -3,10 +3,6 @@
 #include "command_gate.h"
 #include "wifi_config.h"
 
-#ifndef ENABLE_SELFTEST_ENDPOINT
-#define ENABLE_SELFTEST_ENDPOINT 0
-#endif
-
 CommandGate gate;
 String controllerSession;
 void robotStop();

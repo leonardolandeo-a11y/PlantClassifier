@@ -17,7 +17,6 @@ const char* WIFI_SSID = "compile-only";
 const char* WIFI_PASSWORD = "compile-only";
 const char* DEVICE_TOKEN = "compile-only-not-a-real-token-000000000000";
 #define SIMULATION_MODE 1
-#define ENABLE_SELFTEST_ENDPOINT 0
 CONFIG
   "$cli" compile --fqbn "$fqbn" --build-path "$work/build-$sketch" "$work/$sketch"
   # Inspect only sketch output: WiFi libraries legitimately use hardware internally.

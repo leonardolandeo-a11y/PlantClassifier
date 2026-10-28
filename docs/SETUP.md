@@ -62,7 +62,7 @@ Después de cambiar el frontend, guarda también los JS/CSS generados con `npm r
 Sensores ejecuta `ESP32/PlantClassifier/PlantClassifier.ino`: solo `GET /status` y
 `GET /capture`. Movimiento ejecuta `ESP32/Movement/Movement.ino`: `GET /status`,
 `POST /control-session` y `POST /movement`. Todas requieren `X-Device-Token`.
-`ENABLE_SELFTEST_ENDPOINT=0` mantiene deshabilitado el diagnóstico físico opcional.
+El endpoint de diagnóstico `/test` se eliminó; no existe una opción para habilitarlo.
 
 ## Sensor wiring and input contract
 
@@ -131,8 +131,7 @@ scripts/compile-firmware.sh
 El script usa credenciales ficticias temporales; compila sensores, movimiento simulado y
 la rama física, sin cargar nada a una placa. No demuestra funcionamiento físico.
 Para preparar una placa, copia su `wifi_config.example.h` a `wifi_config.h` solo si
-no existe y configura Wi-Fi/token privadamente. Mantén `SIMULATION_MODE=1` y
-`ENABLE_SELFTEST_ENDPOINT=0` en movimiento. Sensores siempre usa DHT11 y potenciómetro:
+no existe y configura Wi-Fi/token privadamente. Mantén `SIMULATION_MODE=1` en movimiento. Sensores siempre usa DHT11 y potenciómetro:
 las antiguas macros de simulación de sensores no tienen efecto.
 
 Identifica físicamente ambas placas y sus puertos; no deduzcas el modelo del adaptador
