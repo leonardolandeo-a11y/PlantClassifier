@@ -208,7 +208,7 @@ python3 scripts/smoke-docker.py
 
 Java tests include local fake HTTP sockets and Python subprocesses, so the environment must permit them and provide `python3`. PostgreSQL tests are skipped in ordinary Maven runs unless `PLANT_TEST_DB_URL`, `PLANT_TEST_DB_USER` and `PLANT_TEST_DB_PASSWORD` point to an **isolated disposable test database**; `scripts/test-postgres.sh` provides one and never mounts production volumes. H2 alone does not prove PostgreSQL compatibility.
 
-The PR workflow runs Java verification, real PostgreSQL migration tests, TypeScript/tests/build with generated-file consistency, host firmware gate tests, Python imports/prediction/evaluation/tests, the targeted credential check, Compose validation and Docker build. It needs no real credentials or hardware. Host C++ tests do not replace compiling sketches with Arduino or testing physical equipment. See [verification record](docs/VERIFICATION.md) for commands actually executed and remaining limitations, and the [complete changed-file inventory](docs/CHANGED_FILES.md).
+The PR workflow runs Java verification, real PostgreSQL migration tests, TypeScript/tests/build with generated-file consistency, host firmware gate tests, Python imports/prediction/evaluation/tests, the targeted credential check, Compose validation and Docker build. It needs no real credentials or hardware. Host C++ tests do not replace compiling sketches with Arduino or testing physical equipment. See [verification record](docs/VERIFICATION.md) for commands actually executed and remaining limitations.
 
 ## Troubleshooting and limits
 
