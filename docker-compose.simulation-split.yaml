@@ -1,6 +1,0 @@
-# Compatibility overlay: simulation.yaml now always runs two role-specific servers.
-services:
-  app:
-    environment:
-      ESP32_URL: http://sensor-simulator:8081
-      MOVEMENT_ESP32_URL: http://simulator:8081
