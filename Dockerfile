@@ -11,7 +11,9 @@ RUN npm run typecheck && npm test && npm run build
 
 FROM eclipse-temurin:21-jdk-noble AS build
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+# Use authenticated transport for repository indexes; keep APT signature/hash checks.
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw dependency:go-offline
@@ -22,7 +24,9 @@ RUN ./mvnw -B verify
 
 FROM eclipse-temurin:21-jre-noble
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 python3-venv \
+# Use authenticated transport for repository indexes; keep APT signature/hash checks.
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
