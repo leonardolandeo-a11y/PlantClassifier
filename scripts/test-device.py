@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 
-def test_device(base, token, capture=False):
+def test_device(base, token):
     def request(path, data=None, authenticated=True, expected=200):
         headers = {'Content-Type': 'application/json'}
         if authenticated:
@@ -67,12 +67,11 @@ def test_device(base, token, capture=False):
     time.sleep(1.65)
     assert request('/status')['controlActive'] is False
     command('FORWARD', 2, expected=409)
-    print('PASS device: token, status, safe simulation, sensor ranges, commands, STOP, sequences, deadlines, watchdog')
+    print('PASS device: token, status, safe simulation, commands, STOP, sequences, deadlines, watchdog')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
-    parser.add_argument('--no-capture', action='store_true')
     args = parser.parse_args()
-    test_device(args.url, os.environ['DEVICE_TOKEN'], False)
+    test_device(args.url, os.environ['DEVICE_TOKEN'])

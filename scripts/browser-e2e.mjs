@@ -22,16 +22,21 @@ async function contains(selector, expected) {
 }
 async function key(key, expected){await page.keyboard.down(key);await contains('#movementStatus',`${expected} accepted`);}
 try {
-    let response=await page.goto(base+'/login'); assert.equal(response.status(),200);
-    await page.locator('#username').fill('invalid-operator');
-    await page.locator('#password').fill('incorrect-test-password');
-    await page.getByRole('button',{name:'Sign in',exact:true}).click();
-    await contains('[role="alert"]','Invalid username or password');
-    assert.equal(movement.length,0);
-    await page.locator('#username').fill(process.env.CONTROL_USERNAME);
-    await page.locator('#password').fill(process.env.CONTROL_PASSWORD);
-    await page.getByRole('button',{name:'Sign in',exact:true}).click();
-    await page.waitForURL(base+'/'); await contains('#authStatus','Signed in as');
+    const response=await page.goto(base+'/'); assert.equal(response.status(),200);
+    await contains('#movementStatus','Ready for keyboard control');
+    assert.equal(await page.locator('#SignIn, #SignOut, #authStatus').count(),0);
+    assert.equal(await page.locator('#CaptureData').isEnabled(),true);
+    // First capture and movement share a single CSRF bootstrap and anonymous session.
+    let csrfRequests=0;
+    page.on('request',request=>{
+        if(new URL(request.url()).pathname==='/csrf') csrfRequests++;
+        assert.equal(request.headers()['x-device-token'],undefined);
+    });
+    await Promise.all([page.locator('#CaptureData').click(), key('w','FORWARD')]);
+    await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
+    await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
+    await contains('#sensorStatus','Software simulated measurements');
+    assert.equal(csrfRequests,1);
     const cookie=(await context.cookies()).find(c=>c.name==='JSESSIONID');
     assert.equal(cookie.httpOnly,true); assert.equal(cookie.sameSite,'Strict');
     const noCsrf=await context.request.post(base+'/movement/session'); assert.equal(noCsrf.status(),403);
@@ -141,11 +146,9 @@ try {
     assert.equal(movement.length,failedMovementCount);
     await page.keyboard.up('w');await page.unroute('**/movement');
     await key('a','LEFT');await page.keyboard.up('a');await contains('#movementStatus','STOP accepted');
-    await page.locator('#SignOut').click(); await contains('#authStatus','Sign in to use the controls');
-    const protectedRead=await context.request.get(base+'/sensors'); assert.equal(protectedRead.status(),401);
-    assert.equal(await page.locator('#CaptureData').isDisabled(),true);
+    assert.equal(await page.locator('#CaptureData').isEnabled(),true);
     assert.deepEqual(errors,[]);
-    // Logged-out screenshots contain no operator name or secret fields.
-    if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});await page.goto(base+'/login');await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/login.png',fullPage:true});}
-    console.log('PASS browser E2E: login failure/success, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors, logout');
+    // Dashboard screenshots contain no secret fields.
+    if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});}
+    console.log('PASS browser E2E: anonymous dashboard, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors');
 } finally { await context.close(); await browser.close(); }

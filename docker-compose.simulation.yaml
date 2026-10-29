@@ -1,7 +1,8 @@
-# Optional lab overlay. Uses the lab token without changing .env.lab or any database volume.
+# Two software devices; use with docker-compose.yaml and the same project/environment.
 services:
   simulator:
-    image: plantclassifier-lab-app
+    image: plantclassifier-simulator
+    build: .
     entrypoint: ["python", "/simulator/esp32-simulator.py", "--host", "0.0.0.0", "--port", "8081", "--role", "movement"]
     environment:
       DEVICE_TOKEN: ${DEVICE_TOKEN:?Set DEVICE_TOKEN}
@@ -11,7 +12,8 @@ services:
       - "127.0.0.1:18081:8081"
     restart: unless-stopped
   sensor-simulator:
-    image: plantclassifier-lab-app
+    image: plantclassifier-simulator
+    build: .
     entrypoint: ["python", "/simulator/esp32-simulator.py", "--host", "0.0.0.0", "--port", "8081", "--role", "sensor"]
     environment:
       DEVICE_TOKEN: ${DEVICE_TOKEN:?Set DEVICE_TOKEN}

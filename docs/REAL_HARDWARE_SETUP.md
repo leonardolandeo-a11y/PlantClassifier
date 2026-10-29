@@ -1,7 +1,3 @@
-> Historical reference: firmware roles and sensor configuration were superseded by
-> [DUAL_ESP32_SETUP.md](DUAL_ESP32_SETUP.md). Do not use the old shared-device or
-> sensor-simulation/calibration instructions below for the current sensor firmware.
-
 # Real movement hardware setup
 
 **Activation is blocked until the owner verifies the wiring, component specifications,
@@ -29,7 +25,7 @@ A scope/logic analyzer is useful for validating PWM before connecting actuators.
 
 ## Wiring and electrical review (all power disconnected)
 
-| ESP32 #1 connection | Destination |
+| Movement ESP32 connection | Destination |
 |---|---|
 | GPIO 25 | AIN1 |
 | GPIO 26 | AIN2 |
@@ -68,8 +64,6 @@ The safe default remains:
 
 ```cpp
 #define SIMULATION_MODE 1
-#define SENSOR_SIMULATION_MODE 1
-#define ENABLE_SELFTEST_ENDPOINT 0
 ```
 
 After the physical review, manually edit only these existing mode lines in the ignored
@@ -77,11 +71,9 @@ After the physical review, manually edit only these existing mode lines in the i
 
 ```cpp
 #define SIMULATION_MODE 0
-#define SENSOR_SIMULATION_MODE 1
-#define ENABLE_SELFTEST_ENDPOINT 0
 ```
 
-Do not modify ESP32 #2's configuration. Hardware code is excluded when SIMULATION_MODE=1.
+Do not modify the sensor ESP32 configuration. Hardware code is excluded when SIMULATION_MODE=1.
 `ESP32/Movement/hardware_config.h` holds pins, steering calibration and reversal interval.
 70°/100°/130° and 500–2400 µs are **legacy, uncalibrated values**, not safe endpoints.
 Verify the servo's supported pulse range before attaching/powering it, initially remove
@@ -171,7 +163,7 @@ heating, unstable power or an initialization fault. Do not re-enable by repeated
 
 ## Restore simulation
 
-Disconnect actuator power first. Set the three local flags back to 1/1/0 as shown above,
+Disconnect actuator power first. Set SIMULATION_MODE=1 as shown above,
 compile a **fresh** simulation artifact and upload to the identified movement board:
 
 ```bash
@@ -183,35 +175,5 @@ Confirm the simulation banner and `/status`: `mode=simulation`, `hardwareOutputE
 `simulated=true`, duty zero. Leave actuator supplies disconnected until faults are resolved.
 Editing a header alone does not change firmware already running on the board.
 
-Keep `MOVEMENT_ESP32_URL` aimed at ESP32 #1 and `ESP32_URL` at the independently identified
-sensor ESP32 #2. The movement board's synthetic `/capture` does not replace the sensor
-board. No sensor firmware, model, training, prediction service or database change is needed.
-
-## Software validation record — 2026-10-19
-
-- Host C++ production actuator/safety functions: simulation has no output writes; hardware
-  mocks cover direction, duty clamping, disable-before-write ordering, reversal rejection,
-  STOP across reversal, millis rollover, servo limits, PWM attach/write failure, servo
-  attachment failure, watchdog expiry, disconnect/reconnect and no stale restart.
-- Command-gate tests: sequences, deadlines, expiry, rollover and STOP invalidation passed.
-- Arduino compile-only: `esp32:esp32:esp32`, Core **3.3.11**, ESP32Servo **3.2.1**,
-  ArduinoJson **7.4.3**; both simulation sketches, movement hardware branch and unchanged
-  real-sensor branch passed. Simulation sketch-object checks found no physical I/O calls.
-  This FQBN is a compile target, not confirmation of the physical board identity.
-- Frontend: all **16** controller tests, TypeScript check and production build passed.
-- Java: **35** tests passed, none skipped, with isolated PostgreSQL and local HTTP mocks;
-  includes authentication/CSRF and device-service regression checks.
-- Python: **3** unchanged ML tests passed in an isolated existing application image with
-  read-only source, after the host Python was found to lack its ML dependencies.
-- Software simulator HTTP conformance passed: unauthorized/invalid commands, command
-  envelopes, STOP, sequence/deadline rejection, watchdog and synthetic captures.
-- Isolated Docker smoke and browser E2E passed, including login, keyboard races, priority
-  STOP, blur, network-error behavior, sensor capture, real ML prediction and persistence.
-  Browser testing used separate movement and sensor software simulator instances. The
-  temporary harness required SERVER_ADDRESS=0.0.0.0 inside its container, with host ports
-  restricted to loopback. No deployed configuration was changed.
-
-Initial Java/socket tests were blocked by the sandbox and passed when rerun with the
-required local socket access. No automated test accessed an actuator-enabled device.
-Physical wiring, supply transients, actual radio-loss stop latency, motor/servo motion,
-mechanical endpoints, coast time and reset behavior on an assembled robot remain untested.
+Keep `MOVEMENT_ESP32_URL` aimed at the movement ESP32 and `ESP32_URL` at the independently identified
+sensor ESP32. The movement board has no `/capture` endpoint. No sensor firmware, model, training, prediction service or database change is needed.

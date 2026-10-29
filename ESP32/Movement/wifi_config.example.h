@@ -5,4 +5,3 @@ const char* WIFI_PASSWORD = "REPLACE_LOCALLY";
 // Match backend DEVICE_TOKEN. Use at least 32 random characters.
 const char* DEVICE_TOKEN = "REPLACE_WITH_RANDOM_DEVICE_TOKEN";
 #define SIMULATION_MODE 1
-#define ENABLE_SELFTEST_ENDPOINT 0

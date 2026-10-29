@@ -10,14 +10,17 @@ const buttonText = required("#buttonText");
 const prediction = required("#prediction");
 const movementStatus = required("#movementStatus");
 const sensorStatus = required("#sensorStatus");
-let signedIn = false;
 let csrf;
+let csrfPending;
 async function request(url, body, mutation = false) {
     if (mutation && !csrf) {
-        const response = await fetch("/csrf", { cache: "no-store" });
-        if (!response.ok)
-            throw new Error("Unable to initialize session protection");
-        csrf = await response.json();
+        // Concurrent first actions must share one anonymous HTTP session.
+        csrfPending ??= fetch("/csrf", { cache: "no-store" }).then(async (response) => {
+            if (!response.ok)
+                throw new Error("Unable to initialize session protection");
+            return await response.json();
+        }).finally(() => { csrfPending = undefined; });
+        csrf = await csrfPending;
     }
     const headers = {};
     if (csrf && mutation)
@@ -35,11 +38,6 @@ async function request(url, body, mutation = false) {
         throw new Error("Network failure or request timeout — device state unconfirmed");
     }
     if (!response.ok) {
-        if (response.status === 401) {
-            setAuthentication(false);
-            csrf = undefined;
-            throw new Error("Sign in to control the robot or capture sensors");
-        }
         if (response.status === 403) {
             csrf = undefined;
             throw new Error("Session protection expired; reload the page");
@@ -80,7 +78,7 @@ captureButton.addEventListener("click", () => {
     void request("/sensors/capture", undefined, true).then(data => { if (data)
         update(data); })
         .catch((error) => { sensorStatus.textContent = error.message; })
-        .finally(() => { captureButton.disabled = !signedIn; buttonText.textContent = "Capture Data"; });
+        .finally(() => { captureButton.disabled = false; buttonText.textContent = "Capture Data"; });
 });
 const keys = new KeyboardState();
 const control = new MovementControl({
@@ -92,8 +90,8 @@ const control = new MovementControl({
     },
     async send(body) {
         const ack = await request("/movement", body, true);
-        if (!ack || ack.status !== "OK" || ack.sessionId !== body.sessionId || ack.sequence !== body.sequence)
-            throw new Error("Invalid device acknowledgement");
+        if (!ack)
+            throw new Error("Empty device acknowledgement");
         return ack;
     }
 }, message => { movementStatus.textContent = message; }, () => keys.clear());
@@ -103,7 +101,7 @@ function typing(target) {
     return target instanceof HTMLElement && (target.isContentEditable || !!target.closest("input, textarea, select"));
 }
 document.addEventListener("keydown", event => {
-    if (!signedIn || document.hidden || !document.hasFocus() || typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
+    if (document.hidden || !document.hasFocus() || typing(event.target) || event.repeat || event.ctrlKey || event.metaKey || event.altKey)
         return;
     const key = event.key.toLowerCase();
     if (!["w", "a", "s", "d"].includes(key))
@@ -127,40 +125,5 @@ document.addEventListener("visibilitychange", () => { if (document.hidden)
     stop(); });
 document.addEventListener("focusin", event => { if (typing(event.target))
     stop(); });
-function setAuthentication(authenticated, username = "") {
-    signedIn = authenticated;
-    required("#authStatus").textContent = authenticated ? `Signed in as ${username}` : "Sign in to use the controls";
-    required("#SignIn").hidden = authenticated;
-    required("#SignOut").hidden = !authenticated;
-    captureButton.disabled = !authenticated;
-    if (!authenticated)
-        stop();
-    else
-        movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
-}
-required("#SignOut").addEventListener("click", () => {
-    stop();
-    void (async () => {
-        // Native form navigation follows Spring's logout redirect and clears cached page state.
-        const response = await fetch("/csrf", { cache: "no-store" });
-        if (!response.ok)
-            throw new Error("Unable to initialize sign out");
-        const token = await response.json();
-        const form = document.createElement("form");
-        form.method = "post";
-        form.action = "/logout";
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "_csrf";
-        input.value = token.token;
-        form.append(input);
-        document.body.append(form);
-        form.submit();
-    })().catch((error) => { movementStatus.textContent = error.message; });
-});
-setAuthentication(false);
-void request("/session").then(session => {
-    setAuthentication(session?.authenticated ?? false, session?.username);
-    if (session?.authenticated)
-        void load();
-}).catch((error) => { sensorStatus.textContent = error.message; });
+movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
+void load();

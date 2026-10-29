@@ -4,7 +4,7 @@ Flyway owns schema initialization; Hibernate always uses `validate`. Automatic b
 
 ## Fresh database
 
-Start PostgreSQL, configure credentials, and start Spring. Flyway applies V1 (the original `sensor_data` table and `sensor_data_seq`, increment 50) and V2 (capture and prediction metadata). Hibernate then validates mappings. Do not set `ddl-auto=create`, `create-drop`, or `update` in production.
+Start PostgreSQL, configure credentials, and start Spring. Flyway applies V1 (the original `sensor_data` table and `sensor_data_seq`, increment 50) , V2 (capture and prediction metadata) and V3 (per-sensor sources). Hibernate then validates mappings. Do not set `ddl-auto=create`, `create-drop`, or `update` in production.
 
 ## Existing database created by Hibernate
 
@@ -28,7 +28,7 @@ Use an operator-installed Flyway CLI with the PostgreSQL module. Supply `FLYWAY_
 flyway -baselineVersion=1 -baselineDescription='Existing sensor schema reviewed' baseline
 ```
 
-Then start the updated app. V1 is skipped and V2 adds columns while preserving rows and sequence state. **Never baseline an empty database at version 1**: it needs V1 to create the original objects. Do not enable `baseline-on-migrate` globally or use Flyway `clean`.
+Then start the updated app. V1 is skipped and V2/V3 add columns while preserving rows and sequence state. **Never baseline an empty database at version 1**: it needs V1 to create the original objects. Do not enable `baseline-on-migrate` globally or use Flyway `clean`.
 
 Legacy measurements retain null `captured_at` and `simulated`, because neither fact can be reconstructed. Their prediction status is `NOT_REQUESTED`. New measurements use the backend reception instant in UTC, not a claimed sensor capture timestamp.
 

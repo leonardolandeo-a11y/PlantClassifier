@@ -32,8 +32,8 @@ public class SensorDataService {
     public Optional<CaptureResponse> getLatestSensorData() {
         return repository.findTopByOrderByIdDesc().map(CaptureResponse::from);
     }
-    private static boolean inRange(Double value, double min, double max) {
-        return value != null && Double.isFinite(value) && value >= min && value <= max;
+    private static boolean inRange(double value, double min, double max) {
+        return Double.isFinite(value) && value >= min && value <= max;
     }
     private static String source(tools.jackson.databind.JsonNode json, String field, String... allowed) {
         if (!json.has(field) || json.get(field).isNull()) return null; // Legacy origin unknown.
@@ -45,16 +45,17 @@ public class SensorDataService {
         if (!capacity.tryAcquire()) throw new SystemFailure(503, "capture-busy", "Capture capacity is busy");
         try {
             var json = DeviceResponse.read(client.get().uri("/capture"));
-            SensorReading reading = new SensorReading(DeviceResponse.number(json, "ph"),
-                    DeviceResponse.number(json, "temperature"), DeviceResponse.number(json, "humidity"),
-                    DeviceResponse.bool(json, "simulated"));
-            if (reading == null || !inRange(reading.ph(), 0, 14) || !inRange(reading.humidity(), 0, 100)
-                    || !inRange(reading.temperature(), minTemperature, maxTemperature) || reading.simulated() == null) {
+            double ph = DeviceResponse.number(json, "ph");
+            double temperature = DeviceResponse.number(json, "temperature");
+            double humidity = DeviceResponse.number(json, "humidity");
+            boolean simulated = DeviceResponse.bool(json, "simulated");
+            if (!inRange(ph, 0, 14) || !inRange(humidity, 0, 100)
+                    || !inRange(temperature, minTemperature, maxTemperature)) {
                 throw new SystemFailure(502, "sensor-data", "Device returned incomplete or invalid sensor readings");
             }
             SensorData data = new SensorData();
-            data.setPh(reading.ph()); data.setTemperature(reading.temperature()); data.setHumidity(reading.humidity());
-            data.setCapturedAt(Instant.now()); data.setSimulated(reading.simulated());
+            data.setPh(ph); data.setTemperature(temperature); data.setHumidity(humidity);
+            data.setCapturedAt(Instant.now()); data.setSimulated(simulated);
             data.setTemperatureSource(source(json, "temperatureSource", "dht11"));
             data.setHumiditySource(source(json, "humiditySource", "dht11"));
             data.setPhSource(source(json, "phSource", "potentiometer", "calibrated-ph-probe"));

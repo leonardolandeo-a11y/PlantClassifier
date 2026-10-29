@@ -10,7 +10,7 @@ import java.util.Objects;
 
 @Service
 public class MovementService {
-    public record ControlSession(String sessionId, Long deviceTimeMs) {}
+    public record ControlSession(String sessionId, long deviceTimeMs) {}
     private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
     private final RestClient client;
     private ControlSession active;
@@ -26,8 +26,8 @@ public class MovementService {
         active = null;
         var json = DeviceResponse.read(client.post().uri("/control-session"));
         var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"));
-        if (session == null || session.sessionId() == null || !session.sessionId().matches("[0-9a-f]{32}")
-                || session.deviceTimeMs() == null || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL) {
+        if (!session.sessionId().matches("[0-9a-f]{32}")
+                || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL) {
             throw new SystemFailure(502, "device-response", "Invalid controller session response");
         }
         this.active = session;
@@ -38,7 +38,7 @@ public class MovementService {
         return session;
     }
 
-    /** Logout closes the owner's device epoch, even when a browser has lost its local state. */
+    /** Release closes the owner's device epoch, even when a browser has lost its local state. */
     public void release(String owner) {
         MovementRequestDTO stop;
         synchronized (this) {
@@ -47,7 +47,7 @@ public class MovementService {
         }
         try { sendCommand(stop, owner); }
         catch (RuntimeException ex) {
-            // Authentication logout must always complete. Firmware's independent watchdog remains active.
+            // Release must always complete. Firmware's independent watchdog remains active.
             synchronized (this) { if (Objects.equals(this.owner, owner)) active = null; }
         }
     }
@@ -86,9 +86,8 @@ public class MovementService {
         var ack = new MovementAck(DeviceResponse.text(json, "status"), DeviceResponse.text(json, "command"),
                 (int) speed, DeviceResponse.bool(json, "simulated"), DeviceResponse.text(json, "sessionId"),
                 DeviceResponse.integer(json, "sequence"));
-        if (ack == null || !"OK".equals(ack.status()) || !request.command().equals(ack.command())
-                || !request.sessionId().equals(ack.sessionId()) || !request.sequence().equals(ack.sequence())
-                || ack.speed() == null || ack.speed() < 0 || ack.speed() > 255 || ack.simulated() == null) {
+        if (!"OK".equals(ack.status()) || !request.command().equals(ack.command())
+                || !request.sessionId().equals(ack.sessionId()) || !request.sequence().equals(ack.sequence())) {
             throw new SystemFailure(502, "device-response", "Invalid device acknowledgement");
         }
         return ack;

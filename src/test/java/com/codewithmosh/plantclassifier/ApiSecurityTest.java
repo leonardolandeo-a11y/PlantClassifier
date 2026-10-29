@@ -24,85 +24,66 @@ class ApiSecurityTest {
     @MockitoBean SensorDataService sensors;
     MockMvc mvc;
     @BeforeEach void setup() { mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build(); }
-    @Test void unauthorizedAndCsrfFailuresAreStructured() throws Exception {
-        mvc.perform(post("/movement")).andExpect(status().isUnauthorized()).andExpect(content().contentTypeCompatibleWith("application/problem+json"));
-        mvc.perform(post("/movement").with(user("operator").roles("OPERATOR")))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/movement/session").with(user("reader").roles("VIEWER")).with(csrf()))
-                .andExpect(status().isForbidden());
-        verifyNoInteractions(movement);
+    @Test void anonymousMutationsWithoutCsrfAreForbidden() throws Exception {
+        for (String path : new String[]{"/movement", "/movement/session", "/sensors/capture"}) {
+            mvc.perform(post(path)).andExpect(status().isForbidden())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            mvc.perform(post(path).with(csrf().useInvalidToken())).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(movement, sensors);
     }
-    @Test void authorizedSessionAcquisitionWorks() throws Exception {
-        when(movement.acquire(any())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L));
-        mvc.perform(post("/movement/session").with(user("operator").roles("OPERATOR")).with(csrf()))
+    @Test void anonymousSessionOwnsControlWithoutAuthentication() throws Exception {
+        var response = mvc.perform(get("/csrf")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty()).andReturn();
+        var session = (org.springframework.mock.web.MockHttpSession) response.getRequest().getSession(false);
+        org.junit.jupiter.api.Assertions.assertNotNull(session);
+        org.junit.jupiter.api.Assertions.assertNull(session.getAttribute("SPRING_SECURITY_CONTEXT"));
+        var token = (org.springframework.security.web.csrf.CsrfToken) response.getRequest().getAttribute(
+                org.springframework.security.web.csrf.CsrfToken.class.getName());
+        when(movement.acquire(session.getId())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L));
+        mvc.perform(post("/movement/session").session(session).header(token.getHeaderName(), token.getToken()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.sessionId").value("a".repeat(32)));
+        verify(movement).acquire(session.getId());
+        for (String command : new String[]{"FORWARD", "BACKWARD", "LEFT", "RIGHT", "CENTER", "STOP"}) {
+            mvc.perform(post("/movement").session(session).header(token.getHeaderName(), token.getToken())
+                    .contentType("application/json").content("{\"command\":\"" + command
+                            + "\",\"speed\":0,\"sessionId\":\"" + "a".repeat(32) + "\",\"sequence\":1}"))
+                    .andExpect(status().isOk());
+        }
+        verify(movement, times(6)).sendCommand(any(), eq(session.getId()));
+        mvc.perform(post("/sensors/capture").session(session).header(token.getHeaderName(), token.getToken()))
+                .andExpect(status().isOk());
+        verify(sensors).captureData();
+        // A different anonymous browser cannot reuse this browser's CSRF token.
+        mvc.perform(post("/movement/session").session(new org.springframework.mock.web.MockHttpSession())
+                .header(token.getHeaderName(), token.getToken())).andExpect(status().isForbidden());
     }
     @Test void invalidJsonFieldsAndNumbersAreRejected() throws Exception {
         for(String body:new String[]{"{", "{}", "{\"command\":\"BAD\",\"speed\":100}",
                 "{\"command\":\"STOP\",\"speed\":1.2,\"sessionId\":\""+"a".repeat(32)+"\",\"sequence\":1}",
                 "{\"command\":\"STOP\",\"speed\":\"100\",\"sessionId\":\""+"a".repeat(32)+"\",\"sequence\":1}"})
-            mvc.perform(post("/movement").with(user("operator").roles("OPERATOR")).with(csrf()).contentType("application/json").content(body))
+            mvc.perform(post("/movement").with(csrf()).contentType("application/json").content(body))
                     .andExpect(status().isBadRequest());
         verifyNoInteractions(movement);
     }
     @Test void timeoutIs504WithoutPrivateDeviceDetails() throws Exception {
         when(movement.acquire(any())).thenThrow(new ResourceAccessException("private device address",new HttpTimeoutException("timeout")));
-        mvc.perform(post("/movement/session").with(user("operator").roles("OPERATOR")).with(csrf()))
+        mvc.perform(post("/movement/session").with(csrf()))
                 .andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.type").value("urn:plantclassifier:device-timeout"));
     }
-    @Test void csrfEndpointSupportsSessionLogin() throws Exception {
-        mvc.perform(get("/csrf")).andExpect(status().isOk()).andExpect(jsonPath("$.token").isNotEmpty());
-    }
-    @Test void loginCreatesAnAuthenticatedBrowserSession() throws Exception {
-        var login=mvc.perform(post("/login").with(csrf()).param("username","test-operator")
-                .param("password","local-test-password-only"))
-                .andExpect(status().is3xxRedirection()).andReturn();
-        var session=(org.springframework.mock.web.MockHttpSession)login.getRequest().getSession(false);
-        assert session != null;
-        when(movement.acquire(any())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L));
-        mvc.perform(post("/movement/session").session(session).with(csrf())).andExpect(status().isOk());
-    }
     @Test void unsupportedMethodsKeepTheirHttpStatus() throws Exception {
-        mvc.perform(get("/movement").with(user("operator").roles("OPERATOR")))
+        mvc.perform(get("/movement"))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
     }
-    @Test void loginPageIsDarkAndContainsRealCsrfForm() throws Exception {
-        mvc.perform(get("/login")).andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/html"))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"_csrf\"")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("/css/output.css")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("action=\"/login\"")));
-    }
-    @Test void invalidCredentialsAndMissingCsrfCannotLogin() throws Exception {
-        mvc.perform(post("/login").with(csrf()).param("username","test-operator").param("password","incorrect"))
-                .andExpect(redirectedUrl("/login?error"));
-        mvc.perform(post("/login").param("username","test-operator").param("password","local-test-password-only"))
-                .andExpect(status().isUnauthorized());
-        mvc.perform(get("/login?error")).andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Invalid username or password")));
-        mvc.perform(get("/session")).andExpect(jsonPath("$.authenticated").value(false));
-    }
-    @Test void loginRotatesSessionAndLogoutInvalidatesIt() throws Exception {
-        var anonymous = new org.springframework.mock.web.MockHttpSession();
-        String oldId = anonymous.getId();
-        var login = mvc.perform(post("/login").session(anonymous).with(csrf()).param("username","test-operator")
-                .param("password","local-test-password-only")).andExpect(redirectedUrl("/")).andReturn();
-        var session = (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
-        org.junit.jupiter.api.Assertions.assertNotEquals(oldId, session.getId());
-        mvc.perform(get("/session").session(session)).andExpect(jsonPath("$.authenticated").value(true))
-                .andExpect(jsonPath("$.username").value("test-operator"));
-        mvc.perform(post("/logout").session(session)).andExpect(status().isForbidden());
-        String owner = session.getId();
-        mvc.perform(post("/logout").session(session).with(csrf())).andExpect(redirectedUrl("/"));
-        org.junit.jupiter.api.Assertions.assertTrue(session.isInvalid());
-        verify(movement).release(owner);
-        mvc.perform(post("/sensors/capture").with(csrf())).andExpect(status().isUnauthorized());
-    }
-    @Test void publicDashboardAssetsAndProtectedReadStatus() throws Exception {
+    @Test void dashboardAndSensorReadAreAvailableWithoutLogin() throws Exception {
         mvc.perform(get("/")).andExpect(status().isOk());
         mvc.perform(get("/js/scripts.js")).andExpect(status().isOk());
-        mvc.perform(get("/sensors")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/sensors")).andExpect(status().isNoContent());
+        verify(sensors).getLatestSensorData();
+        mvc.perform(get("/login")).andExpect(status().isNotFound());
+        mvc.perform(get("/session")).andExpect(status().isNotFound());
+        org.junit.jupiter.api.Assertions.assertTrue(context.getBeansOfType(
+                org.springframework.security.core.userdetails.UserDetailsService.class).isEmpty());
     }
-
 }
