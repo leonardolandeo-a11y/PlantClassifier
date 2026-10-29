@@ -22,17 +22,25 @@ async function contains(selector, expected) {
 }
 async function key(key, expected){await page.keyboard.down(key);await contains('#movementStatus',`${expected} accepted`);}
 try {
-    const response=await page.goto(base+'/'); assert.equal(response.status(),200);
-    await contains('#movementStatus','Ready for keyboard control');
-    assert.equal(await page.locator('#SignIn, #SignOut, #authStatus').count(),0);
-    assert.equal(await page.locator('#CaptureData').isEnabled(),true);
-    // First capture and movement share a single CSRF bootstrap and anonymous session.
     let csrfRequests=0;
     page.on('request',request=>{
         if(new URL(request.url()).pathname==='/csrf') csrfRequests++;
         assert.equal(request.headers()['x-device-token'],undefined);
     });
-    await Promise.all([page.locator('#CaptureData').click(), key('w','FORWARD')]);
+    let releaseCsrf;
+    const csrfGate=new Promise(resolve=>{releaseCsrf=resolve;});
+    await page.route('**/csrf',async route=>{await csrfGate;await route.continue();});
+    const response=await page.goto(base+'/'); assert.equal(response.status(),200);
+    await contains('#movementStatus','Ready for keyboard control');
+    assert.equal(await page.locator('#SignIn, #SignOut, #authStatus').count(),0);
+    assert.equal(await page.locator('#CaptureData').isEnabled(),true);
+    // First capture and movement share a single CSRF bootstrap and anonymous session.
+    assert.equal(movement.length,0);
+    const firstActions=Promise.all([page.locator('#CaptureData').click(), key('w','FORWARD')]);
+    await page.waitForFunction(()=>document.querySelector('#CaptureData').disabled &&
+        document.querySelector('#movementStatus').textContent.includes('Connecting'));
+    assert.equal(csrfRequests,1);assert.equal(movement.length,0);
+    releaseCsrf();await firstActions;await page.unroute('**/csrf');
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await contains('#sensorStatus','Software simulated measurements');
@@ -40,6 +48,8 @@ try {
     const cookie=(await context.cookies()).find(c=>c.name==='JSESSIONID');
     assert.equal(cookie.httpOnly,true); assert.equal(cookie.sameSite,'Strict');
     const noCsrf=await context.request.post(base+'/movement/session'); assert.equal(noCsrf.status(),403);
+    // Bootstrap creates no robot epoch or motion. Later actions reuse its CSRF promise.
+    assert.equal(csrfRequests,1);
     await key('w','FORWARD'); await key('a','LEFT');
     await page.keyboard.up('a'); await contains('#movementStatus','FORWARD accepted');
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
@@ -150,5 +160,20 @@ try {
     assert.deepEqual(errors,[]);
     // Dashboard screenshots contain no secret fields.
     if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});}
+    // Actual page abandonment must deliver a keepalive STOP and never reacquire.
+    await key('w','FORWARD');
+    const leavingAt=performance.now();
+    await page.goto('about:blank');
+    // Chromium may discard the page's response event after navigation. Verify the
+    // device directly before its 1500 ms watchdog could hide a lost keepalive.
+    const deadline=leavingAt+750;
+    let stopped;
+    do {
+        stopped=await (await fetch(device+'/status',{headers:{'X-Device-Token':process.env.DEVICE_TOKEN}})).json();
+        if(stopped.command==='STOP' && !stopped.controlActive) break;
+        await new Promise(resolve=>setTimeout(resolve,20));
+    } while(performance.now()<deadline);
+    assert.equal(stopped.command,'STOP');assert.equal(stopped.controlActive,false);
+    assert.ok(performance.now()-leavingAt<750,'STOP must reach the device before watchdog expiration');
     console.log('PASS browser E2E: anonymous dashboard, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors');
 } finally { await context.close(); await browser.close(); }

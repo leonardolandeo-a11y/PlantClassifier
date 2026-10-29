@@ -10,21 +10,21 @@ const buttonText = required("#buttonText");
 const prediction = required("#prediction");
 const movementStatus = required("#movementStatus");
 const sensorStatus = required("#sensorStatus");
+// One shared promise serves bootstrap and simultaneous first actions.
 let csrf;
-let csrfPending;
+function initializeCsrf() {
+    return csrf ??= fetch("/csrf", { cache: "no-store" }).then(async (response) => {
+        if (!response.ok)
+            throw new Error("Unable to initialize session protection");
+        return await response.json();
+    }).catch(error => { csrf = undefined; throw error; });
+}
 async function request(url, body, mutation = false) {
-    if (mutation && !csrf) {
-        // Concurrent first actions must share one anonymous HTTP session.
-        csrfPending ??= fetch("/csrf", { cache: "no-store" }).then(async (response) => {
-            if (!response.ok)
-                throw new Error("Unable to initialize session protection");
-            return await response.json();
-        }).finally(() => { csrfPending = undefined; });
-        csrf = await csrfPending;
-    }
     const headers = {};
-    if (csrf && mutation)
-        headers[csrf.headerName] = csrf.token;
+    if (mutation) {
+        const protection = await initializeCsrf();
+        headers[protection.headerName] = protection.token;
+    }
     if (body !== undefined)
         headers["Content-Type"] = "application/json";
     let response;
@@ -126,4 +126,6 @@ document.addEventListener("visibilitychange", () => { if (document.hidden)
 document.addEventListener("focusin", event => { if (typing(event.target))
     stop(); });
 movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
+// Prepare HTTP protection only; opening the page must never acquire robot control.
+void initializeCsrf().catch(() => { });
 void load();

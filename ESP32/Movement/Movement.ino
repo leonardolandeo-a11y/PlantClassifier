@@ -31,14 +31,6 @@ WebServer server(80);
 // ============================================================
 // RESPUESTAS HTTP
 // ============================================================
-void sendError(int code, const char* message) {
-  JsonDocument doc;
-  doc["error"] = message;
-  String body;
-  serializeJson(doc, body);
-  server.send(code, "application/json", body);
-}
-
 void sendStatus() {
   JsonDocument doc;
   doc["status"] = "online";
@@ -80,21 +72,21 @@ void handleMovement() {
 #if !SIMULATION_MODE
     if (!pwmOK || !servoOK) {
       robotStop(); gate.invalidate();
-      sendError(503, "Actuator initialization failed");
+      protocolError(503, "Actuator initialization failed");
       return;
     }
 #endif
     int direction = command == "FORWARD" ? 1 : -1;
     if (!motorDrive(direction, speed)) {
       robotStop(); gate.invalidate();
-      sendError(pwmOK ? 409 : 503, pwmOK ? "Reversal interlock: release keys, wait for motor to stop, then press again" : "Motor PWM fault; restart required");
+      protocolError(pwmOK ? 409 : 503, pwmOK ? "Reversal interlock: release keys, wait for motor to stop, then press again" : "Motor PWM fault; restart required");
       return;
     }
   } else if (command == "LEFT" || command == "RIGHT" || command == "CENTER") {
 #if !SIMULATION_MODE
     if (!servoOK) {
       robotStop(); gate.invalidate();
-      sendError(503, "Servo initialization failed");
+      protocolError(503, "Servo initialization failed");
       return;
     }
 #endif
@@ -103,20 +95,11 @@ void handleMovement() {
   } else if (command == "STOP") {
     robotStop();
   } else {
-    sendError(400, "Unknown command");
+    protocolError(400, "Unknown command");
     return;
   }
 
   lastCommandTime = millis();
-#if SIMULATION_MODE
-  Serial.printf("[CMD] %s speed=%d\n", command.c_str(), currentSpeed);
-  Serial.printf("[SIMULATION] %s accepted; hardware output disabled\n", command.c_str());
-#else
-  Serial.printf("[CMD] %s speed=%d angle=%d PWM=%lu STBY=%d\n",
-                command.c_str(), currentSpeed, currentAngle,
-                (unsigned long)(pwmOK ? ledcRead(PWMA) : 0),
-                digitalRead(STBY));
-#endif
 
   JsonDocument result;
   result["status"] = "OK";

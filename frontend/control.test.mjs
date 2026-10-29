@@ -109,3 +109,21 @@ test('STOP is never reported confirmed before its matching acknowledgement',asyn
     pending.resolve({status:'OK',command:'STOP',speed:0,sessionId:'0'.repeat(32),sequence:2,simulated:true});await tick();
     assert.equal(t.control.state,'ERROR');assert.match(t.messages.at(-1),/STOP unconfirmed/);
 });
+
+test('W -> A -> D -> S during delayed FORWARD sends only latest BACKWARD immediately after ACK',async()=>{
+    const pending=deferred(),calls=[];
+    const t=setup({send:r=>{calls.push(r);return calls.length===1?pending.promise:Promise.resolve(ack(r));}});
+    t.control.set('FORWARD');await tick();
+    t.control.set('LEFT');t.control.set('RIGHT');t.control.set('BACKWARD');
+    assert.equal(calls.length,1);
+    pending.resolve(ack(calls[0]));await tick();
+    assert.deepEqual(calls.map(r=>r.command),['FORWARD','BACKWARD']);
+    t.control.stop();await tick();
+});
+
+test('new direction bypasses scheduled heartbeat, STOP cancels it',async()=>{
+    const t=setup();t.control.set('FORWARD');await tick();
+    t.control.set('LEFT');await tick();assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT']);
+    t.control.stop();await tick();await delay(300);
+    assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT','STOP']);
+});

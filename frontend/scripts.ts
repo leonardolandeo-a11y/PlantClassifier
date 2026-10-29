@@ -15,19 +15,20 @@ const prediction = required<HTMLElement>("#prediction");
 const movementStatus = required<HTMLElement>("#movementStatus");
 const sensorStatus = required<HTMLElement>("#sensorStatus");
 type Csrf = {headerName: string; token: string};
-let csrf: Csrf | undefined;
-let csrfPending: Promise<Csrf> | undefined;
+// One shared promise serves bootstrap and simultaneous first actions.
+let csrf: Promise<Csrf> | undefined;
+function initializeCsrf(): Promise<Csrf> {
+    return csrf ??= fetch("/csrf", {cache: "no-store"}).then(async response => {
+        if (!response.ok) throw new Error("Unable to initialize session protection");
+        return await response.json() as Csrf;
+    }).catch(error => { csrf = undefined; throw error; });
+}
 async function request<T>(url: string, body?: unknown, mutation = false): Promise<T | null> {
-    if (mutation && !csrf) {
-        // Concurrent first actions must share one anonymous HTTP session.
-        csrfPending ??= fetch("/csrf", {cache: "no-store"}).then(async response => {
-            if (!response.ok) throw new Error("Unable to initialize session protection");
-            return await response.json() as Csrf;
-        }).finally(() => { csrfPending = undefined; });
-        csrf = await csrfPending;
-    }
     const headers: Record<string, string> = {};
-    if (csrf && mutation) headers[csrf.headerName] = csrf.token;
+    if (mutation) {
+        const protection = await initializeCsrf();
+        headers[protection.headerName] = protection.token;
+    }
     if (body !== undefined) headers["Content-Type"] = "application/json";
     let response: Response;
     try {
@@ -101,4 +102,6 @@ window.addEventListener("pagehide", stop);
 document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
 document.addEventListener("focusin", event => { if (typing(event.target)) stop(); });
 movementStatus.textContent = "Ready for keyboard control — press W/A/S/D";
+// Prepare HTTP protection only; opening the page must never acquire robot control.
+void initializeCsrf().catch(() => { /* A user action can try again; never start movement here. */ });
 void load();

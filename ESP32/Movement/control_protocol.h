@@ -70,10 +70,3 @@ void configureControl() {
   server.collectHeaders(headers, 1);
   server.on("/control-session", HTTP_POST, acquireControl);
 }
-void checkControlSafety() {
-  if (WiFi.status() != WL_CONNECTED || gate.expired(millis())) {
-    if (gate.active) Serial.println("[FAILSAFE] Control lost -> STOP");
-    gate.invalidate();
-    robotStop();
-  }
-}
