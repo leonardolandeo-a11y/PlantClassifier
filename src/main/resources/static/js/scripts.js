@@ -55,6 +55,9 @@ async function request(url, body, mutation = false) {
 function update(data) {
     required("#ph").textContent = data.ph.toFixed(2);
     required("#temperature").textContent = data.temperature.toFixed(1);
+    const soil = document.querySelector("#soilMoisture");
+    if (soil)
+        soil.textContent = data.soilMoisture == null ? "Calibration required" : `${data.soilMoisture.toFixed(0)}% (${data.soilMoistureSource ?? "unknown"})`;
     required("#humidity").textContent = data.humidity.toFixed(1);
     prediction.textContent = data.predictionStatus === "SUCCEEDED" ? data.prediction :
         `Measurement saved — prediction ${data.predictionStatus.toLowerCase()}${data.predictionError ? ` (${data.predictionError})` : ""}`;

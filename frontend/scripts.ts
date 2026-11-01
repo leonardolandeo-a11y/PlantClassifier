@@ -1,5 +1,6 @@
 import {KeyboardState, MovementControl, ControlRejected, type Acknowledgement, type MovementRequest} from "./control.js";
 interface SensorData {
+    soilMoisture?: number | null; soilMoistureSource?: string | null;
     ph: number; temperature: number; humidity: number; capturedAt: string | null;
     temperatureSource?: string | null; humiditySource?: string | null; phSource?: string | null;
     simulated: boolean | null; prediction: string | null; predictionStatus: string; predictionError: string | null;
@@ -49,6 +50,8 @@ async function request<T>(url: string, body?: unknown, mutation = false): Promis
 function update(data: SensorData): void {
     required<HTMLElement>("#ph").textContent = data.ph.toFixed(2);
     required<HTMLElement>("#temperature").textContent = data.temperature.toFixed(1);
+    const soil = document.querySelector<HTMLElement>("#soilMoisture");
+    if (soil) soil.textContent = data.soilMoisture == null ? "Calibration required" : `${data.soilMoisture.toFixed(0)}% (${data.soilMoistureSource ?? "unknown"})`;
     required<HTMLElement>("#humidity").textContent = data.humidity.toFixed(1);
     prediction.textContent = data.predictionStatus === "SUCCEEDED" ? data.prediction :
         `Measurement saved — prediction ${data.predictionStatus.toLowerCase()}${data.predictionError ? ` (${data.predictionError})` : ""}`;

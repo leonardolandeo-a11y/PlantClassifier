@@ -127,36 +127,6 @@
             <p id="sensorStatus" role="status" aria-live="polite"></p>
             <div class="sensor-grid">
 
-                <!-- pH -->
-                <article class="sensor-card sensor-card--ph">
-
-                    <div class="sensor-accent"
-                         aria-hidden="true"></div>
-
-                    <div class="sensor-card-header">
-
-                        <h3 class="sensor-label">
-                            pH Level
-                        </h3>
-
-                        <span class="sensor-icon"
-                              aria-hidden="true">
-                            🧪
-                        </span>
-
-                    </div>
-
-                    <p class="sensor-reading">
-                        <span id="ph">--</span>
-                        <span class="sensor-unit">pH</span>
-                    </p>
-
-                    <p class="sensor-card-footer">
-                        Acidity / alkalinity
-                    </p>
-
-                </article>
-
                 <!-- Temperature -->
                 <article class="sensor-card sensor-card--temperature">
 
@@ -182,7 +152,7 @@
                     </p>
 
                     <p class="sensor-card-footer">
-                        Temperature in Celsius
+                        DHT11 · ambient temperature
                     </p>
 
                 </article>
@@ -196,7 +166,7 @@
                     <div class="sensor-card-header">
 
                         <h3 class="sensor-label">
-                            Humidity
+                            Air Humidity
                         </h3>
 
                         <span class="sensor-icon"
@@ -212,17 +182,54 @@
                     </p>
 
                     <p class="sensor-card-footer">
-                        Relative humidity
+                        DHT11 · relative air humidity
                     </p>
 
                 </article>
+                <article class="sensor-card sensor-card--humidity">
+                    <div class="sensor-accent" aria-hidden="true"></div>
+                    <div class="sensor-card-header"><h3 class="sensor-label">Soil Moisture</h3><span class="sensor-icon" aria-hidden="true">🌱</span></div>
+                    <p class="mt-6 text-xl font-semibold" id="soilMoisture">--</p>
+                    <p class="sensor-card-footer">Analog sensor · calibrated scale</p>
+                </article>
+                <!-- pH -->
+                <article class="sensor-card sensor-card--ph">
+
+                    <div class="sensor-accent"
+                         aria-hidden="true"></div>
+
+                    <div class="sensor-card-header">
+
+                        <h3 class="sensor-label">
+                            pH Level
+                        </h3>
+
+                        <span class="sensor-icon"
+                              aria-hidden="true">
+                            🧪
+                        </span>
+
+                    </div>
+
+                    <p class="sensor-reading">
+                        <span id="ph">--</span>
+                        <span class="sensor-unit">pH</span>
+                    </p>
+
+                    <p class="sensor-card-footer">
+                        Potentiometer demonstration
+                    </p>
+
+                </article>
+
+
 
             </div>
 
         </section>
 
         <!-- =====================================
-             PLANT RECOMMENDATION
+             PLANT RECOMMENDATION — 3 variables
              ===================================== -->
 
         <section class="mt-8"
@@ -231,6 +238,7 @@
             <article class="prediction-panel">
 
                 <div class="prediction-content">
+                    <p class="sensor-card-footer">Model: temperature, air humidity and pH. Soil moisture is not used.</p>
 
                     <div class="prediction-icon"
                          aria-hidden="true">
@@ -240,7 +248,7 @@
                     <div>
 
                         <p class="prediction-label">
-                            PLANT RECOMMENDATION
+                            PLANT RECOMMENDATION — 3 variables
                         </p>
 
                         <h2 id="prediction-heading"
@@ -312,6 +320,7 @@
     </main>
 
     <script type="module" src="./js/scripts.js"></script>
+
 
 </body>
 </html>

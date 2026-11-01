@@ -44,6 +44,9 @@ try {
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await contains('#sensorStatus','Software simulated measurements');
+    await contains('#soilMoisture','45% (software)');
+    assert.equal(await text('#humidity'),'60.0');
+    assert.equal(await page.locator('.sensor-card').count(),4);
     assert.equal(csrfRequests,1);
     const cookie=(await context.cookies()).find(c=>c.name==='JSESSIONID');
     assert.equal(cookie.httpOnly,true); assert.equal(cookie.sameSite,'Strict');
@@ -126,6 +129,9 @@ try {
     const capture=await (await captureResponse).json();
     assert.equal(capture.predictionStatus,'SUCCEEDED'); assert.equal(capture.simulated,true); assert.ok(capture.id);
     await contains('#sensorStatus','Software simulated measurements');
+    await contains('#soilMoisture','45% (software)');
+    assert.equal(await text('#humidity'),'60.0');
+    assert.equal(await page.locator('.sensor-card').count(),4);
     await contains('#prediction',capture.prediction);
     const latest=await (await context.request.get(base+'/sensors')).json();
     assert.equal(latest.id,capture.id); assert.equal(latest.prediction,capture.prediction);
@@ -158,6 +164,16 @@ try {
     await key('a','LEFT');await page.keyboard.up('a');await contains('#movementStatus','STOP accepted');
     assert.equal(await page.locator('#CaptureData').isEnabled(),true);
     assert.deepEqual(errors,[]);
+    // A missing calibration must not replace the other measurements.
+    await page.route('**/sensors/capture', async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        await route.fulfill({response, json:{...data,soilMoisture:null,soilMoistureSource:'resistive-analog'}});
+    });
+    await page.locator('#CaptureData').click();
+    await contains('#soilMoisture','Calibration required');
+    assert.equal(await text('#humidity'),'60.0');
+    await page.unroute('**/sensors/capture');
     // Dashboard screenshots contain no secret fields.
     if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});}
     // Actual page abandonment must deliver a keepalive STOP and never reacquire.

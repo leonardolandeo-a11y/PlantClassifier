@@ -49,3 +49,7 @@ jobs:
       - run: docker build -t plantclassifier:ci .
       - name: End-to-end smoke with disposable PostgreSQL and fake ESP32
         run: PLANT_TEST_IMAGE=plantclassifier:ci python scripts/smoke-docker.py
+      - name: Browser integration with disposable PostgreSQL and simulated devices
+        run: |
+          npx playwright install --with-deps chromium
+          CHROME_PATH="" PLANT_TEST_IMAGE=plantclassifier:ci python scripts/test-browser.py
