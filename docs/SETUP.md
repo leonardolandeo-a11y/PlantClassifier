@@ -78,6 +78,9 @@ Other ESP32 families deliberately fail the compile-time target guard.
 | Potentiometer outer terminal | compatible 3.3 V reference |
 | Potentiometer other outer terminal | GND |
 | Potentiometer wiper | GPIO 34 |
+| Soil AO | GPIO 35, after module voltage verification |
+| Soil VCC / GND | 3.3 V only if module compatible / GND |
+| Soil DO | Unconnected |
 
 GPIO34 is input-only ADC1 channel 6 on the classic ESP32, usable alongside WiFi.
 The sketch explicitly configures 12-bit acquisition (0–4095) and `ADC_11db` attenuation.
@@ -95,7 +98,7 @@ ADC nonlinearity and rail saturation are acceptable for this demonstration, not 
 DHT11 temperature and humidity must be finite and within 0–50 °C and 20–80% RH,
 respectively ([Adafruit specifications](https://www.adafruit.com/product/386)).
 The firmware samples at most once per 2000 ms, returning the cached sample inside that
-interval with `sampleAgeMs`. A failed sample returns HTTP 503 throughout the interval;
+interval with `sampleAgeMs`. A failed DHT sample returns HTTP 503 throughout the interval;
 it never substitutes synthetic values or returns an older successful sample after failure.
 
 Example response (numbers are illustrative, not measurements from your board):
@@ -105,6 +108,10 @@ Example response (numbers are illustrative, not measurements from your board):
   "temperature": 25.0,
   "humidity": 60.0,
   "ph": 6.502564,
+  "soilMoisture": null,
+  "soilMoistureSource": "resistive-analog",
+  "soilStatus": "calibration-pending",
+  "soilRaw": 2000,
   "temperatureSource": "dht11",
   "humiditySource": "dht11",
   "phSource": "potentiometer",
@@ -131,7 +138,7 @@ scripts/compile-firmware.sh
 El script usa credenciales ficticias temporales; compila sensores, movimiento simulado y
 la rama física, sin cargar nada a una placa. No demuestra funcionamiento físico.
 Para preparar una placa, copia su `wifi_config.example.h` a `wifi_config.h` solo si
-no existe y configura Wi-Fi/token privadamente. Mantén `SIMULATION_MODE=1` en movimiento. Sensores siempre usa DHT11 y potenciómetro:
+no existe y configura Wi-Fi/token privadamente. Mantén `SIMULATION_MODE=1` en movimiento. Sensores usa DHT11, potenciómetro y suelo analógico:
 las antiguas macros de simulación de sensores no tienen efecto.
 
 Identifica físicamente ambas placas y sus puertos; no deduzcas el modelo del adaptador
@@ -237,3 +244,74 @@ confiables. El informe de evaluación describe una partición 80/20 con semilla 
 no una validación de campo del modelo desplegado. Las pruebas físicas pendientes son
 identidad/cableado de placas, DHT real, potenciómetro, alimentación, servo/motor,
 coast-down y parada ante pérdida real de comunicación.
+
+## Humedad del suelo y modelo
+
+### Cableado y calibración física pendiente
+
+No se ha recibido una fotografía verificable: la descripción sugiere una sonda resistiva,
+pero no identifica un modelo concreto. Confirmar inscripciones, placa ESP32 clásica,
+alimentación y rango de AO antes de conectar. No aplicar 5 V a ningún GPIO.
+GPIO35 es ADC1_CH7, de entrada, compatible con el uso de Wi-Fi según
+[Espressif](https://documentation.espressif.com/esp32-wroom-32_datasheet_en.html).
+
+Con motores desconectados y alimentación cortada, revisar cableado. Alimentar el módulo
+compatible y comprobar AO con multímetro antes de conectarlo al ESP32. Consultar `/capture`
+con el token privado: `soilRaw` es diagnóstico, `soilStatus` indica `calibration-pending`,
+`invalid` o `calibrated`. No divulgar el token ni guardarlo en capturas.
+
+En el mismo suelo, profundidad y alimentación, registrar varios promedios estables en
+condición seca y después húmeda de referencia (sin sumergir la electrónica). Escribir
+esas referencias en `SOIL_DRY_RAW` y `SOIL_WET_RAW` de `sensor_config.h`. Hasta entonces
+ambas quedan en -1. Valores iguales o fuera del ADC son inválidos. Compilar y realizar
+la carga manual únicamente tras revisión física. Comprobar extremos e intermedio.
+La conversión admite ambos sentidos, limita 0–100 y redondea a enteros. Se promedian
+ocho muestras sin esperas adicionales. Los extremos saturados del ADC se rechazan.
+Un ADC flotante puede parecer válido: esto NO detecta siempre un cable desconectado.
+
+El porcentaje es una escala relativa del sensor, no agua volumétrica. Conductividad,
+sales, suelo y corrosión cambian las lecturas. Limpiar, secar e inspeccionar electrodos
+tras uso; evitar alimentación permanente y recalibrar al cambiar suelo o sonda.
+No alimentar el módulo directamente desde un GPIO sin analizar su corriente.
+
+El firmware entrega suelo nulo cuando no puede convertirlo. Spring conserva las otras
+mediciones y la procedencia; rechaza valores numéricos fuera de rango o sin origen.
+V4 permite nulos históricos y no modifica V1–V3 ni secuencias. El ADC bruto solo se
+expone en el dispositivo: no requiere columnas ni controles nuevos en el dashboard.
+
+### Investigación ML (2026-11-01)
+
+`Data.csv` contiene 11 000 filas, 22 cultivos y 500 ejemplos por clase, con columnas
+`temperature,humidity,ph,label`. No contiene suelo, identificadores de parcela ni fechas.
+El historial registra su modificación en `ff893e8`, pero no acredita fuente primaria,
+licencia del dataset ni método de adquisición. No debe presentarse como evidencia de
+campo validada. Temperatura se interpreta en °C y humidity como humedad del aire;
+la falta de metadatos impide certificar instrumentos y unidades de origen.
+
+| Fuente examinada | Licencia declarada | Decisión |
+|---|---|---|
+| [CropRec-BD](https://data.mendeley.com/datasets/dtf278skpw/1) | CC BY 4.0 | Declara suelo, pH, aire y unas 3000 filas/9 cultivos; fechas contradictorias y escala/calibración no verificadas. No aprobado. |
+| [Crop recommendation](https://data.mendeley.com/datasets/vynxnppr7j/1) | CC BY 4.0 | Describe generación CTGAN; no acredita observaciones físicas conjuntas de suelo compatibles. |
+| [Crop Prediction](https://data.mendeley.com/datasets/2mht7hz98y/1) | CC BY 4.0 | 2200 filas/22 cultivos; lluvia y humedad ambiental, no humedad del suelo. |
+
+No se importó ningún candidato: **cero registros nuevos aprobados**, no cero registros
+existentes en esas fuentes. No se puede afirmar que no exista un dataset adecuado.
+Falta un archivo verificable con las cuatro mediciones por observación, diccionario
+de unidades, calibración transferible al sensor, licencia y etiquetas justificadas,
+además de parcela/fecha para separar grupos y evitar fuga. VWC y lluvia no sustituyen
+la escala resistiva. Sin esos datos no es legítimo entrenar cuatro variables.
+
+Se conserva `model.pkl` y el contrato de tres variables en Python y Java. `train.py`
+reentrena un candidato de evaluación con semilla 42 y división estratificada 80/20,
+elimina vectores duplicados y rechaza etiquetas contradictorias. Su informe incluye
+accuracy, precision/recall/F1 macro y weighted, matriz y distribución. La división
+aleatoria no descarta correlación ni datos sintéticos sin metadatos. Las métricas no
+son una validación independiente del artefacto desplegado, entrenado con todos los datos.
+
+### Auditoría de complejidad
+
+Se conservan DTO existentes, migraciones, límites de proceso ML, CSRF, token, watchdog,
+secuencias y STOP: tienen consumidores y funciones distintas. Los scripts de firmware,
+simulador, PostgreSQL y navegador verifican capas diferentes. No se demostró código
+obsoleto adicional que pudiera eliminarse con seguridad; no se realizó una refactorización
+masiva. Suelo amplía clases existentes sin servicios, dependencias ni ajustes de interfaz.

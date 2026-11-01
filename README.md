@@ -6,7 +6,7 @@ el servidor guarda las mediciones en PostgreSQL y ejecuta Python para predecir.
 
 Hay **dos ESP32 independientes**:
 
-- **Sensores:** DHT11 real para temperatura/humedad y potenciómetro para simular pH.
+- **Sensores:** DHT11 para temperatura/humedad ambiental, suelo analógico y potenciómetro para simular pH.
   El potenciómetro no mide pH químico. La interfaz y la base de datos conservan ese origen.
 - **Movimiento:** recibe comandos HTTP autenticados. Por defecto solo los imprime en
   Serial Monitor; activar el TB6612FNG y el servo requiere revisar el hardware.
@@ -14,7 +14,7 @@ Hay **dos ESP32 independientes**:
 ```mermaid
 flowchart TD
     UI[Navegador: TypeScript y Tailwind] -->|Sesión y CSRF| API[Spring Boot / Java 21]
-    API -->|HTTP y token| SENSOR[ESP32 sensores: DHT11 y potenciómetro]
+    API -->|HTTP y token| SENSOR[ESP32 sensores: DHT11, suelo y potenciómetro]
     API -->|HTTP y token| MOTOR[ESP32 movimiento: simulación por defecto]
     API -->|JPA y Flyway| DB[(PostgreSQL persistente)]
     API -->|Proceso con timeout| ML[Python / Random Forest]
@@ -81,7 +81,7 @@ La última medición se consulta directamente en la base de datos.
 | `MovementRequestDTO`, `MovementAck`, `CaptureResponse` | Contratos de comunicación sin exponer la entidad |
 | `frontend/control.ts`, `frontend/scripts.ts` | Control del teclado y conexión de la interfaz con la API |
 | `Movement.ino` y sus headers | `setup`: Wi-Fi/hardware; `handleMovement`: comando; `motorDrive`: motor; `robotStop`: STOP; `loop`: seguridad |
-| `PlantClassifier.ino` y sus headers | Leer DHT/potenciómetro y servir `/capture` y `/status` |
+| `PlantClassifier.ino` y sus headers | Leer DHT/suelo/potenciómetro y servir `/capture` y `/status` |
 | `predict.py`, `features.py`, `train.py` | Inferencia, orden de variables y evaluación reproducible |
 
 ## Seguridad y límites
@@ -107,3 +107,11 @@ modelo desplegado. No demuestra precisión de campo ni sustituye una medición r
 
 Consulta [SETUP](docs/SETUP.md) para IntelliJ, firmware USB y pruebas, y
 [CONTROL_PROTOCOL](docs/CONTROL_PROTOCOL.md) para el contrato HTTP y las carreras con STOP.
+
+## Humedad del suelo
+
+El ESP32 de sensores conserva temperatura y humedad ambiental DHT11, pH de demostración
+y añade suelo analógico en GPIO35. Sin calibración devuelve `null`; las otras lecturas
+se guardan normalmente. V4 añade columnas opcionales sin alterar mediciones antiguas.
+El Random Forest desplegado sigue usando **temperature, humidity, ph**; suelo no participa.
+Consulta [calibración e investigación de datos](docs/SETUP.md#humedad-del-suelo-y-modelo).
