@@ -31,6 +31,8 @@ def test_device(base, token):
         assert 0 <= reading['ph'] <= 14
         assert reading['phSource'] in ('software', 'potentiometer')
         assert 0 <= reading['temperature'] <= 50 and 20 <= reading['humidity'] <= 80
+        assert reading['soilMoistureSource'] in ('software', 'resistive-analog')
+        assert reading['soilMoisture'] is None or 0 <= reading['soilMoisture'] <= 100
         request('/capture', authenticated=False, expected=401)
         request('/movement', {}, expected=404)
         request('/control-session', {}, expected=404)

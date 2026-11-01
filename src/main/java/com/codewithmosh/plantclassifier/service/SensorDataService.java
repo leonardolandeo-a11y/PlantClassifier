@@ -62,6 +62,13 @@ public class SensorDataService {
             if ("potentiometer".equals(data.getPhSource()) || "software".equals(data.getPhSource())
                     || "software".equals(data.getTemperatureSource()) || "software".equals(data.getHumiditySource()))
                 data.setSimulated(true);
+            data.setSoilMoistureSource(source(json, "soilMoistureSource", "resistive-analog"));
+            if (json.has("soilMoisture") && !json.get("soilMoisture").isNull()) {
+                double soil = DeviceResponse.number(json, "soilMoisture");
+                if (!inRange(soil, 0, 100) || data.getSoilMoistureSource() == null) throw DeviceResponse.invalid();
+                data.setSoilMoisture(soil);
+            }
+            if ("software".equals(data.getSoilMoistureSource())) data.setSimulated(true);
             data.setPredictionStatus("PENDING");
             // This commit is independent of prediction. Do not wrap this method in a database transaction.
             data = repository.saveAndFlush(data);

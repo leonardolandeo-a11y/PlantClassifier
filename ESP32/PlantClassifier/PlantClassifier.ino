@@ -18,6 +18,7 @@ SensorSample sample;
 void sources(JsonDocument& doc) {
   doc["temperatureSource"] = "dht11";
   doc["humiditySource"] = "dht11";
+  doc["soilMoistureSource"] = "resistive-analog";
   doc["phSource"] = "potentiometer";
   doc["simulated"] = true; // pH represents a demonstration quantity.
 }
@@ -36,6 +37,10 @@ void captureData() {
   doc["temperature"] = sample.temperature;
   doc["humidity"] = sample.humidity;
   doc["ph"] = sample.ph;
+  doc["soilMoisture"] = nullptr;
+  if (isfinite(sample.soilMoisture)) doc["soilMoisture"] = sample.soilMoisture;
+  doc["soilRaw"] = sample.soilRaw;
+  doc["soilStatus"] = sample.soilRaw < 0 ? "invalid" : isfinite(sample.soilMoisture) ? "calibrated" : "calibration-pending";
   doc["sampleAgeMs"] = now - lastSample;
   String body;
   serializeJson(doc, body);
@@ -61,6 +66,8 @@ void setup() {
   analogReadResolution(PH_ADC_BITS);
   analogSetPinAttenuation(PH_PIN, ADC_11db);
   pinMode(PH_PIN, INPUT);
+  pinMode(SOIL_PIN, INPUT);
+  analogSetPinAttenuation(SOIL_PIN, ADC_11db);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);

@@ -18,11 +18,29 @@ class PostgresMigrationTest {
     }
     @Test void initializesFreshPostgresDatabase() throws Exception {
         String schema="test_"+UUID.randomUUID().toString().replace("-","");
-        var result=flyway(schema).migrate(); assertEquals(3,result.migrationsExecuted);
+        var result=flyway(schema).migrate(); assertEquals(4,result.migrationsExecuted);
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,captured_at,simulated,prediction_status) VALUES(nextval('sensor_data_seq'),7,20,60,CURRENT_TIMESTAMP,true,'PENDING')");
             try(var rows=statement.executeQuery("SELECT count(*) FROM sensor_data")) { rows.next(); assertEquals(1,rows.getInt(1)); }
+        }
+    }
+    @Test void upgradesV3WithoutChangingMeasurements() throws Exception {
+        String schema="v3_"+UUID.randomUUID().toString().replace("-","");
+        Flyway.configure().dataSource(url,user,password).schemas(schema)
+                .locations("classpath:db/migration").target("3").load().migrate();
+        try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
+            statement.execute("SET search_path TO "+schema);
+            statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status) VALUES(501,7,20,60,'PENDING')");
+            assertEquals(1,flyway(schema).migrate().migrationsExecuted);
+            try(var rows=statement.executeQuery("SELECT humidity,soil_moisture,soil_moisture_source FROM sensor_data WHERE id=501")) {
+                assertTrue(rows.next()); assertEquals(60,rows.getDouble(1)); assertNull(rows.getObject(2)); assertNull(rows.getObject(3));
+            }
+            statement.execute("UPDATE sensor_data SET soil_moisture=45,soil_moisture_source='resistive-analog' WHERE id=501");
+            try(var rows=statement.executeQuery("SELECT humidity,soil_moisture FROM sensor_data WHERE id=501")) {
+                assertTrue(rows.next()); assertEquals(60,rows.getDouble(1)); assertEquals(45,rows.getDouble(2));
+            }
+            assertThrows(SQLException.class,()->statement.execute("UPDATE sensor_data SET soil_moisture=101"));
         }
     }
     @Test void explicitBaselinePreservesExistingDataAndSequence() throws Exception {
@@ -35,8 +53,8 @@ class PostgresMigrationTest {
             // Automatic baseline is disabled: require explicit operator approval after schema inspection.
             assertThrows(Exception.class,()->flyway(schema).migrate());
             flyway(schema).baseline(); flyway(schema).migrate();
-            try(var rows=statement.executeQuery("SELECT id,captured_at,prediction_status FROM sensor_data")) {
-                assertTrue(rows.next()); assertEquals(501,rows.getLong(1)); assertNull(rows.getObject(2)); assertEquals("NOT_REQUESTED",rows.getString(3));
+            try(var rows=statement.executeQuery("SELECT id,captured_at,prediction_status,soil_moisture,soil_moisture_source FROM sensor_data")) {
+                assertTrue(rows.next()); assertEquals(501,rows.getLong(1)); assertNull(rows.getObject(2)); assertEquals("NOT_REQUESTED",rows.getString(3)); assertNull(rows.getObject(4)); assertNull(rows.getObject(5));
             }
             try(var rows=statement.executeQuery("SELECT nextval('sensor_data_seq')")) { rows.next(); assertEquals(1001,rows.getLong(1)); }
         }

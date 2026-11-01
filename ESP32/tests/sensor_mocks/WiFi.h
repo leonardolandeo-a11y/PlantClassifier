@@ -9,10 +9,10 @@ inline unsigned long mockTime=3000;
 inline int adcCalls=0, adcValue=2048;
 inline unsigned long millis() { return mockTime; }
 inline void delay(unsigned long value) { mockTime+=value; }
-inline int analogRead(int pin) { assert(pin==34); ++adcCalls; return adcValue; }
+inline int analogRead(int pin) { assert((pin==34 || pin==35)); ++adcCalls; return adcValue; }
 inline void analogReadResolution(int bits) { assert(bits==12); }
-inline void analogSetPinAttenuation(int pin,int attenuation) { assert(pin==34 && attenuation==ADC_11db); }
-inline void pinMode(int pin,int mode) { assert(pin==34 && mode==INPUT); }
+inline void analogSetPinAttenuation(int pin,int attenuation) { assert((pin==34 || pin==35) && attenuation==ADC_11db); }
+inline void pinMode(int pin,int mode) { assert((pin==34 || pin==35) && mode==INPUT); }
 struct MockSerial { void begin(int) {} template<class T> void print(T) {} template<class T> void println(T) {} };
 inline MockSerial Serial;
 struct MockIP { String toString() { return "127.0.0.1"; } };

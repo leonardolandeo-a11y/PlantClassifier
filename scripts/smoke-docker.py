@@ -67,7 +67,10 @@ def inside():
             assert capture["capturedAt"] and capture["simulated"] is True
             assert capture["temperature"] == 25 and capture["prediction"]
         assert capture["phSource"] == "software"
+        assert capture["soilMoisture"] == 45 and capture["humidity"] == 60
+        assert capture["soilMoistureSource"] == "software"
         latest = get("/sensors")
+        assert latest["soilMoisture"] == 45
         assert latest["id"] == capture["id"] and latest["prediction"] == capture["prediction"]
         print("Docker E2E passed: anonymous session/CSRF, missing-CSRF rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:

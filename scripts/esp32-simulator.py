@@ -65,7 +65,7 @@ def make_server(host, port, token, role="movement"):
                 if self.path == '/status' and role == 'sensor':
                     self.reply(200, {'status': 'online', 'role': 'sensor', 'mode': 'simulation',
                                     'simulated': True, 'hardwareOutputEnabled': False,
-                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software'})
+                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software', 'soilMoisture': 45.0, 'soilMoistureSource': 'software'})
                 elif self.path == '/status':
                     self.reply(200, {'status': 'online', 'mode': 'simulation', 'simulated': True,
                                     'role': role, 'hardwareOutputEnabled': False,
@@ -74,7 +74,7 @@ def make_server(host, port, token, role="movement"):
                 elif self.path == '/capture' and role == 'sensor':
                     print('[SENSOR] SIMULATION ph=6.5 temperature=25.0 humidity=60.0', flush=True)
                     self.reply(200, {'ph': 6.5, 'temperature': 25.0, 'humidity': 60.0, 'simulated': True,
-                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software'})
+                                    'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software', 'soilMoisture': 45.0, 'soilMoistureSource': 'software'})
                 else:
                     self.reply(404, {'error': 'Not found'})
 

@@ -76,6 +76,33 @@ class SensorDataServiceTest {
         assertEquals("FAILED",result.predictionStatus()); assertEquals("ml-timeout",result.predictionError());
         assertNull(result.prediction()); verify(repository,times(2)).saveAndFlush(any());
     }
+    @Test void soilIsIndependentAndSurvivesPredictionFailure() {
+        reading("""
+            {"ph":7,"temperature":20,"humidity":60,"simulated":false,
+             "soilMoisture":45,"soilMoistureSource":"software"}
+            """);
+        when(ml.predict(20,60,7)).thenThrow(new SystemFailure(504,"ml-timeout","Timed out"));
+        var result=service.captureData();
+        assertEquals(45,result.soilMoisture()); assertEquals(60,result.humidity());
+        assertEquals("software",result.soilMoistureSource()); assertTrue(result.simulated());
+        assertEquals("FAILED",result.predictionStatus());
+        verify(repository,times(2)).saveAndFlush(argThat(row -> row.getSoilMoisture()==45));
+    }
+    @Test void pendingCalibrationDoesNotBlockOtherMeasurements() {
+        reading("""
+            {"ph":7,"temperature":20,"humidity":60,"simulated":false,
+             "soilMoisture":null,"soilMoistureSource":"resistive-analog"}
+            """);
+        assertNull(service.captureData().soilMoisture()); verify(ml).predict(20,60,7);
+    }
+    @Test void invalidSoilIsRejected() {
+        for(String value:new String[]{"-1","101","\"45\"","1e9999"}) {
+            server.reset();
+            reading("{\"ph\":7,\"temperature\":20,\"humidity\":60,\"simulated\":false,\"soilMoistureSource\":\"resistive-analog\",\"soilMoisture\":"+value+"}");
+            assertThrows(SystemFailure.class,()->service.captureData());
+        }
+        verifyNoInteractions(repository,ml);
+    }
     @Test void latestUsesOrderedSingleRowQueryAndHandlesEmptyDatabase() {
         when(repository.findTopByOrderByIdDesc()).thenReturn(Optional.empty());
         assertTrue(service.getLatestSensorData().isEmpty());
