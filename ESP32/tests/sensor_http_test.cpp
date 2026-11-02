@@ -15,8 +15,10 @@ int main() {
  server.request("/control-session"); assert(server.status==404);
  server.request("/capture"); assert(server.status==200 && dht.reads==2 && adcCalls==16);
  assert(!deserializeJson(doc,server.body));
- assert(doc["soilMoisture"].isNull());
- assert(doc["soilStatus"]=="calibration-pending" && doc["soilMoistureSource"]=="resistive-analog");
+ float expected = calibratedSoil(2048, SOIL_DRY_RAW, SOIL_WET_RAW);
+ if (isfinite(expected)) { assert(doc["soilMoisture"]==expected && doc["soilStatus"]=="calibrated"); }
+ else { assert(doc["soilMoisture"].isNull() && doc["soilStatus"]=="calibration-pending"); }
+ assert(doc["soilMoistureSource"]=="resistive-analog");
  assert(doc["temperature"]==25 && doc["humidity"]==60 && doc["simulated"]==true);
  assert(doc["temperatureSource"]=="dht11" && doc["humiditySource"]=="dht11");
  assert(doc["phSource"]=="potentiometer" && fabs(doc["ph"].as<float>()-7)<.01);

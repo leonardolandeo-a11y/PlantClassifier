@@ -13,6 +13,8 @@ assert.equal(safety.mode,'simulation'); assert.equal(safety.hardwareOutputEnable
 const browser = await chromium.launch({headless:true, ...(process.env.CHROME_PATH ? {executablePath:process.env.CHROME_PATH} : {})});
 const context = await browser.newContext();
 const page = await context.newPage();
+// Bound asynchronous route gates too, so a missing request cannot hang CI.
+const deadlineTimer = setTimeout(() => { console.error('Browser scenario exceeded 120 seconds'); void browser.close(); }, 120000);
 const errors=[]; page.on('pageerror',error=>errors.push(error.message));
 const movement=[];
 page.on('request',request=>{if(new URL(request.url()).pathname==='/movement' && request.method()==='POST') movement.push(request.postDataJSON());});
@@ -34,6 +36,7 @@ try {
     await contains('#movementStatus','Ready for keyboard control');
     assert.equal(await page.locator('#SignIn, #SignOut, #authStatus').count(),0);
     assert.equal(await page.locator('#CaptureData').isEnabled(),true);
+    console.log('E2E: First capture');
     // First capture and movement share a single CSRF bootstrap and anonymous session.
     assert.equal(movement.length,0);
     const firstActions=Promise.all([page.locator('#CaptureData').click(), key('w','FORWARD')]);
@@ -44,13 +47,14 @@ try {
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await contains('#sensorStatus','Software simulated measurements');
-    await contains('#soilMoisture','45% (software)');
+    await contains('#soilMoisture','45 %');
     assert.equal(await text('#humidity'),'60.0');
     assert.equal(await page.locator('.sensor-card').count(),4);
     assert.equal(csrfRequests,1);
     const cookie=(await context.cookies()).find(c=>c.name==='JSESSIONID');
     assert.equal(cookie.httpOnly,true); assert.equal(cookie.sameSite,'Strict');
     const noCsrf=await context.request.post(base+'/movement/session'); assert.equal(noCsrf.status(),403);
+    console.log('E2E: Bootstrap creates');
     // Bootstrap creates no robot epoch or motion. Later actions reuse its CSRF promise.
     assert.equal(csrfRequests,1);
     await key('w','FORWARD'); await key('a','LEFT');
@@ -62,14 +66,17 @@ try {
     // Exercise STOP while a key is held, then ensure release cannot restart movement.
     await key('w','FORWARD'); await page.locator('#StopMovement').click();
     await contains('#movementStatus','STOP accepted'); await page.keyboard.up('w');
+    console.log('E2E: Repeated keydown');
     // Repeated keydown while physically held must not restart after emergency STOP.
     const stoppedCount=movement.length;
     await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'w',repeat:true,bubbles:true})));
     await page.waitForTimeout(350); assert.equal(movement.length,stoppedCount);
+    console.log('E2E: Heartbeats keep');
     // Heartbeats keep a held direction alive past the firmware watchdog window.
     await key('w','FORWARD'); await page.waitForTimeout(3200);
     assert.ok(movement.filter(r=>r.command==='FORWARD').length>=10);
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
+    console.log('E2E: Browser blur');
     // Browser blur clears held keys; restoring focus does not restart.
     await key('a','LEFT'); await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
     await contains('#movementStatus','STOP accepted');
@@ -81,6 +88,7 @@ try {
     await contains('#movementStatus','STOP accepted');
     const count=movement.length; await page.locator('#test-text-field').pressSequentially('wasd');
     assert.equal(movement.length,count); await page.locator('#test-text-field').evaluate(el=>el.remove());
+    console.log('E2E: Delay a real');
     // Delay a real acquisition response until after release; only STOP may follow it.
     let releaseAcquisition, acquisitionArrived;
     const arrival=new Promise(resolve=>{acquisitionArrived=resolve;});
@@ -93,6 +101,7 @@ try {
     releaseAcquisition(); await contains('#movementStatus','STOP accepted');
     assert.deepEqual(movement.slice(acquireCount).map(r=>r.command),['STOP']);
     await page.unroute('**/movement/session');
+    console.log('E2E: Hold FORWARD');
     // Hold FORWARD before forwarding to Spring so STOP wins the race and FORWARD gets 409.
     let releaseMove, moveArrived;
     const moveArrival=new Promise(resolve=>{moveArrived=resolve;});
@@ -107,11 +116,13 @@ try {
     releaseMove();await rejected;await page.waitForTimeout(100);
     assert.match(await text('#movementStatus'),/STOP accepted/);
     await page.unroute('**/movement');
+    console.log('E2E: Genuine short');
     // Genuine short presses through the complete stack, followed by fresh actions.
     for(const letter of ['w','a','s','d']){
         await page.keyboard.down(letter);await page.waitForTimeout(50);await page.keyboard.up(letter);
         await contains('#movementStatus','STOP accepted');
     }
+    console.log('E2E: All editable');
     // All editable targets ignore robot keys; entering them also cancels movement.
     for(const tag of ['textarea','div']){
         await page.evaluate(tag=>{const el=document.createElement(tag);el.id='editable-test';if(tag==='div')el.contentEditable='true';document.body.append(el);el.focus();},tag);
@@ -125,17 +136,19 @@ try {
     await page.keyboard.up('w');
     const captureResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/sensors/capture');
     await page.locator('#CaptureData').click();
-    assert.equal(await text('#buttonText'),'Capturing…');
+    assert.match(await text('#CaptureData'),/Capturando…/);
     const capture=await (await captureResponse).json();
+    assert.equal(capture.predictionModel,'synthetic-five-crops-v2');
+    assert.ok(['frijol','tomate','sandía','melón','lechuga'].includes(capture.prediction));
     assert.equal(capture.predictionStatus,'SUCCEEDED'); assert.equal(capture.simulated,true); assert.ok(capture.id);
     await contains('#sensorStatus','Software simulated measurements');
-    await contains('#soilMoisture','45% (software)');
+    await contains('#soilMoisture','45 %');
     assert.equal(await text('#humidity'),'60.0');
     assert.equal(await page.locator('.sensor-card').count(),4);
-    await contains('#prediction',capture.prediction);
+    await contains('#prediction',capture.prediction.charAt(0).toUpperCase()+capture.prediction.slice(1));
     const latest=await (await context.request.get(base+'/sensors')).json();
     assert.equal(latest.id,capture.id); assert.equal(latest.prediction,capture.prediction);
-    await page.reload(); await contains('#prediction',capture.prediction);
+    await page.reload(); await contains('#prediction',capture.prediction.charAt(0).toUpperCase()+capture.prediction.slice(1));
     // Explicit UI fixture for mixed physical/demo provenance; no claim of hardware measurement.
     await page.route('**/sensors/capture', route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...capture,temperatureSource:'dht11',humiditySource:'dht11',phSource:'potentiometer'})}));
     await page.locator('#CaptureData').click();
@@ -146,6 +159,7 @@ try {
     // Failure rendering uses a deliberately failed transport; successful paths above are unmocked.
     await page.route('**/sensors/capture',route=>route.fulfill({status:504,contentType:'application/problem+json',body:'{"status":504}'}));
     await page.locator('#CaptureData').click(); await contains('#sensorStatus','Device timed out');
+    await contains('#prediction','Sin nueva recomendación');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await page.unroute('**/sensors/capture');
     await page.route('**/movement/session',route=>route.fulfill({status:502,contentType:'application/problem+json',body:'{"status":502}'}));
@@ -164,18 +178,60 @@ try {
     await key('a','LEFT');await page.keyboard.up('a');await contains('#movementStatus','STOP accepted');
     assert.equal(await page.locator('#CaptureData').isEnabled(),true);
     assert.deepEqual(errors,[]);
+    console.log('E2E: A missing calibration');
     // A missing calibration must not replace the other measurements.
     await page.route('**/sensors/capture', async route => {
         const response = await route.fetch();
         const data = await response.json();
-        await route.fulfill({response, json:{...data,soilMoisture:null,soilMoistureSource:'resistive-analog'}});
+        await route.fulfill({response, json:{...data,soilMoisture:null,soilStatus:'calibration-pending',soilMoistureSource:'resistive-analog',prediction:null,predictionStatus:'PENDING',predictionModel:null}});
     });
     await page.locator('#CaptureData').click();
-    await contains('#soilMoisture','Calibration required');
+    await contains('#soilMoisture','Calibración pendiente');
+    await contains('#prediction','Recomendación pendiente');
     assert.equal(await text('#humidity'),'60.0');
     await page.unroute('**/sensors/capture');
+    console.log('E2E: Domain-abstention');
+    // Domain-abstention UI fixture; backend/real-Python behavior is exercised by smoke-docker.py.
+    await page.route('**/sensors/capture',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...capture,ph:9.1,soilMoisture:58,prediction:null,predictionStatus:'OUT_OF_DOMAIN',predictionError:'ml-out-of-domain'})}));
+    await page.locator('#CaptureData').click();
+    await contains('#prediction','Fuera del rango del modelo');
+    assert.equal(await text('#ph'),'9.10');
+    await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
+    await page.unroute('**/sensors/capture');
+    console.log('E2E: A delayed initial');
+    // A delayed initial GET cannot overwrite a newer capture.
+    let releaseLatest, latestArrived;
+    const latestGate=new Promise(resolve=>{releaseLatest=resolve;});
+    const latestArrival=new Promise(resolve=>{latestArrived=resolve;});
+    await page.route('**/sensors',async route=>{
+        latestArrived(); await latestGate;
+        await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...capture,ph:1,prediction:'frijol'})});
+    });
+    await page.reload(); await latestArrival;
+    await page.locator('#CaptureData').click();
+    await contains('#prediction',capture.prediction.charAt(0).toUpperCase()+capture.prediction.slice(1));
+    releaseLatest(); await page.waitForTimeout(100);
+    assert.equal(await text('#ph'),'6.50');
+    await page.unroute('**/sensors');
+    console.log('E2E: Dashboard screenshots');
     // Dashboard screenshots contain no secret fields.
-    if(process.env.PLANT_SCREENSHOT_DIR){mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});}
+    if(process.env.PLANT_SCREENSHOT_DIR){
+        mkdirSync(process.env.PLANT_SCREENSHOT_DIR,{recursive:true});
+        await page.setViewportSize({width:1440,height:1100});
+        await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard.png',fullPage:true});
+        await page.setViewportSize({width:390,height:844});
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'No mobile horizontal overflow');
+        await page.screenshot({path:process.env.PLANT_SCREENSHOT_DIR+'/dashboard-mobile.png',fullPage:true});
+        await page.setViewportSize({width:1280,height:900});
+    }
+    // Pointer/touch-style press and cancellation use the same safe controller.
+    const forward=page.getByRole('button',{name:'Adelante',exact:true});
+    await forward.scrollIntoViewIfNeeded();
+    const box=await forward.boundingBox();
+    await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+    await page.mouse.down();await contains('#movementStatus','FORWARD accepted');
+    await page.mouse.up();await contains('#movementStatus','STOP accepted');
+    console.log('E2E: Actual page abandonment');
     // Actual page abandonment must deliver a keepalive STOP and never reacquire.
     await key('w','FORWARD');
     const leavingAt=performance.now();
@@ -192,4 +248,4 @@ try {
     assert.equal(stopped.command,'STOP');assert.equal(stopped.controlActive,false);
     assert.ok(performance.now()-leavingAt<750,'STOP must reach the device before watchdog expiration');
     console.log('PASS browser E2E: anonymous dashboard, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors');
-} finally { await context.close(); await browser.close(); }
+} finally { clearTimeout(deadlineTimer); await context.close(); await browser.close(); }

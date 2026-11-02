@@ -9,5 +9,5 @@ constexpr unsigned long SENSOR_INTERVAL_MS = 2000;
 
 constexpr int SOIL_PIN = 35;
 // Replace only after physical wiring verification and dry/wet reference measurements.
-constexpr int SOIL_DRY_RAW = -1;
-constexpr int SOIL_WET_RAW = -1;
+constexpr int SOIL_DRY_RAW = 2686;
+constexpr int SOIL_WET_RAW = 1100 ;

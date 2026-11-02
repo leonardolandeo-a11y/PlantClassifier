@@ -55,13 +55,19 @@ public class SensorDataService {
             }
             SensorData data = new SensorData();
             data.setPh(ph); data.setTemperature(temperature); data.setHumidity(humidity);
-            data.setCapturedAt(Instant.now()); data.setSimulated(simulated);
+            // PostgreSQL timestamps retain microseconds; return the same instant on capture and reload.
+            data.setCapturedAt(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS)); data.setSimulated(simulated);
             data.setTemperatureSource(source(json, "temperatureSource", "dht11"));
             data.setHumiditySource(source(json, "humiditySource", "dht11"));
             data.setPhSource(source(json, "phSource", "potentiometer", "calibrated-ph-probe"));
             if ("potentiometer".equals(data.getPhSource()) || "software".equals(data.getPhSource())
                     || "software".equals(data.getTemperatureSource()) || "software".equals(data.getHumiditySource()))
                 data.setSimulated(true);
+            if (json.has("soilStatus") && !json.get("soilStatus").isNull()) {
+                String status = DeviceResponse.text(json, "soilStatus");
+                if (status.length() > 32) throw DeviceResponse.invalid();
+                data.setSoilStatus(status);
+            }
             data.setSoilMoistureSource(source(json, "soilMoistureSource", "resistive-analog"));
             if (json.has("soilMoisture") && !json.get("soilMoisture").isNull()) {
                 double soil = DeviceResponse.number(json, "soilMoisture");
@@ -72,11 +78,15 @@ public class SensorDataService {
             data.setPredictionStatus("PENDING");
             // This commit is independent of prediction. Do not wrap this method in a database transaction.
             data = repository.saveAndFlush(data);
+            if (data.getSoilMoisture() == null || (data.getSoilStatus() != null && !"calibrated".equals(data.getSoilStatus()))) {
+                return CaptureResponse.from(data); // Saved, awaiting a usable soil reading; never impute.
+            }
+            data.setPredictionModel("synthetic-five-crops-v2");
             try {
-                data.setPrediction(ml.predict(data.getTemperature(), data.getHumidity(), data.getPh()));
+                data.setPrediction(ml.predict(data.getTemperature(), data.getHumidity(), data.getPh(), data.getSoilMoisture()));
                 data.setPredictionStatus("SUCCEEDED");
             } catch (SystemFailure ex) {
-                data.setPredictionStatus("FAILED");
+                data.setPredictionStatus("ml-out-of-domain".equals(ex.category()) ? "OUT_OF_DOMAIN" : "FAILED");
                 data.setPredictionError(ex.category());
             }
             // If this write fails, the first persisted measurement remains PENDING for troubleshooting.

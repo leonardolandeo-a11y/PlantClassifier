@@ -78,7 +78,12 @@ class ApiSecurityTest {
     }
     @Test void dashboardAndSensorReadAreAvailableWithoutLogin() throws Exception {
         mvc.perform(get("/")).andExpect(status().isOk());
-        mvc.perform(get("/js/scripts.js")).andExpect(status().isOk());
+        String index = mvc.perform(get("/index.html")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        java.util.regex.Matcher asset = java.util.regex.Pattern.compile("/assets/[^\" ]+\\.js").matcher(index);
+        org.junit.jupiter.api.Assertions.assertTrue(asset.find(), "Vite module must be present");
+        mvc.perform(get(asset.group())).andExpect(status().isOk());
+        mvc.perform(get("/js/scripts.js")).andExpect(status().isNotFound());
         mvc.perform(get("/sensors")).andExpect(status().isNoContent());
         verify(sensors).getLatestSensorData();
         mvc.perform(get("/login")).andExpect(status().isNotFound());

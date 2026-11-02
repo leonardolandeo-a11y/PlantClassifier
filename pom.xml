@@ -28,6 +28,7 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <frontend.skip>false</frontend.skip>
     </properties>
     <dependencies>
         <!-- Spring Boot -->
@@ -84,7 +85,17 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource><directory>${project.build.directory}/generated-resources/frontend</directory></resource>
+        </resources>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version>
+                <executions><execution><id>vite-build</id><phase>generate-resources</phase><goals><goal>exec</goal></goals>
+                    <configuration><skip>${frontend.skip}</skip><executable>npm</executable><arguments><argument>run</argument><argument>build</argument></arguments></configuration>
+                </execution></executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

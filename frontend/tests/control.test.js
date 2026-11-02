@@ -1,6 +1,7 @@
-import {test} from 'node:test';
+// @vitest-environment node
+import {test} from 'vitest';
 import assert from 'node:assert/strict';
-import {KeyboardState, MovementControl, ControlRejected} from '../src/main/resources/static/js/control.js';
+import {KeyboardState, MovementControl, ControlRejected} from '../src/movement/controller.ts';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,5));
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ack=r=>({...r,status:'OK',simulated:true});

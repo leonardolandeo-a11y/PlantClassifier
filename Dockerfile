@@ -1,12 +1,11 @@
 FROM node:24-bookworm-slim AS frontend
 WORKDIR /app
 COPY package*.json ./
+COPY frontend/package.json ./frontend/package.json
 RUN npm ci
 COPY frontend ./frontend
 COPY scripts ./scripts
-COPY tsconfig.json ./
-COPY src/main/resources/static/index.html ./src/main/resources/static/index.html
-RUN npm run typecheck && npm test && npm run build
+RUN npm run typecheck && npm run lint && npm test && npm run build
 
 FROM eclipse-temurin:21-jdk-noble AS build
 WORKDIR /app
@@ -16,9 +15,9 @@ RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources \
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 COPY src ./src
-COPY --from=frontend /app/src/main/resources/static ./src/main/resources/static
+COPY --from=frontend /app/frontend/dist ./target/generated-resources/frontend/static
 # H2 and fake-device tests require no production credentials or hardware.
-RUN chmod +x mvnw && ./mvnw -B verify
+RUN chmod +x mvnw && ./mvnw -B -Dfrontend.skip=true verify
 
 FROM eclipse-temurin:21-jre-noble
 WORKDIR /app
@@ -31,7 +30,7 @@ ENV PATH="/opt/venv/bin:${PATH}"
 COPY MLClassification/requirements.txt ./MLClassification/requirements.txt
 RUN python -m pip install --no-cache-dir -r MLClassification/requirements.txt
 COPY MLClassification/predict.py MLClassification/features.py MLClassification/model.pkl ./MLClassification/
-RUN python MLClassification/predict.py 25 60 7
+RUN python MLClassification/predict.py 25 60 7 45
 COPY --from=build /app/target/*.jar ./app.jar
 RUN useradd --system --uid 10001 app
 USER 10001

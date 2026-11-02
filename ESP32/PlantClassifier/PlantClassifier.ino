@@ -29,6 +29,12 @@ void captureData() {
     sampled = true;
     lastSample = now;
     sampleValid = readSensors(dht, [](int pin) { return analogRead(pin); }, sample);
+    Serial.printf(
+      "[DHT11] Temperatura=%.1f Humedad=%.1f Valido=%s\n",
+      sample.temperature,
+      sample.humidity,
+      sampleValid ? "SI" : "NO"
+  );
   }
   // A failed sample remains an error throughout the sampling interval.
   if (!sampleValid) { protocolError(503, "DHT11 read failed or outside rated range"); return; }
@@ -83,7 +89,28 @@ void setup() {
 }
 void loop() {
   static unsigned long lastReconnect = 0;
-  if (WiFi.status() == WL_CONNECTED) server.handleClient();
-  else if (millis() - lastReconnect >= 5000) { lastReconnect = millis(); WiFi.reconnect(); }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    server.handleClient();
+  } else if (millis() - lastReconnect >= 5000) {
+    lastReconnect = millis();
+    WiFi.reconnect();
+  }
+
   delay(1);
+  static unsigned long lastSoilDebug = 0;
+
+  if (millis() - lastSoilDebug >= 2500) {
+      lastSoilDebug = millis();
+
+      Serial.print("SOIL SAMPLES:");
+
+      for (int i = 0; i < 8; i++) {
+          int raw = analogRead(SOIL_PIN);
+          Serial.print(" ");
+          Serial.print(raw);
+      }
+
+      Serial.println();
+  }
 }

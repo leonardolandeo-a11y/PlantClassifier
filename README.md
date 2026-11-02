@@ -13,7 +13,7 @@ Hay **dos ESP32 independientes**:
 
 ```mermaid
 flowchart TD
-    UI[Navegador: TypeScript y Tailwind] -->|Sesión y CSRF| API[Spring Boot / Java 21]
+    UI[Navegador: React + TypeScript + Tailwind] -->|Sesión y CSRF| API[Spring Boot / Java 21]
     API -->|HTTP y token| SENSOR[ESP32 sensores: DHT11, suelo y potenciómetro]
     API -->|HTTP y token| MOTOR[ESP32 movimiento: simulación por defecto]
     API -->|JPA y Flyway| DB[(PostgreSQL persistente)]
@@ -79,7 +79,7 @@ La última medición se consulta directamente en la base de datos.
 | `DeviceResponse`, `GlobalExceptionHandler`, `SystemFailure` | Validar respuestas y comunicar errores seguros |
 | `SensorData`, `SensorDataRepository` | Entidad JPA y consulta de la última medición |
 | `MovementRequestDTO`, `MovementAck`, `CaptureResponse` | Contratos de comunicación sin exponer la entidad |
-| `frontend/control.ts`, `frontend/scripts.ts` | Control del teclado y conexión de la interfaz con la API |
+| `frontend/src/movement/`, `frontend/src/hooks/`, `frontend/src/components/` | Máquina de estados, hooks React y dashboard |
 | `Movement.ino` y sus headers | `setup`: Wi-Fi/hardware; `handleMovement`: comando; `motorDrive`: motor; `robotStop`: STOP; `loop`: seguridad |
 | `PlantClassifier.ino` y sus headers | Leer DHT/suelo/potenciómetro y servir `/capture` y `/status` |
 | `predict.py`, `features.py`, `train.py` | Inferencia, orden de variables y evaluación reproducible |
@@ -101,9 +101,12 @@ inversión/parada del motor ni el watchdog bajo fallos reales de radio. Usa rued
 levantadas y desconexión física de emergencia. Lee [la guía física](docs/REAL_HARDWARE_SETUP.md)
 antes de conectar actuadores y [SECURITY](docs/SECURITY.md) para credenciales y despliegue.
 
-El modelo y sus datos se conservan. La evaluación en `MLClassification/evaluation.json`
-corresponde a un candidato con partición de prueba, no a una evaluación independiente del
-modelo desplegado. No demuestra precisión de campo ni sustituye una medición real de pH.
+El modelo experimental `synthetic-five-crops-v2` usa cuatro variables y recomienda únicamente frijol, tomate,
+sandía, melón o lechuga. Se entrenó con 8800 de 11000 ejemplos sintéticos; `evaluation.json`
+evalúa las 2200 filas reservadas. Usa 200 árboles y hojas de al menos 5 muestras.
+Se abstiene fuera de los rangos de entrenamiento y conserva la lectura como `OUT_OF_DOMAIN`.
+No demuestra precisión de campo ni sustituye una medición real de pH.
+Consulta el [diagnóstico de suelo, probabilidades y comparación v1/v2](docs/SOIL_INFLUENCE_DIAGNOSIS.md).
 
 Consulta [SETUP](docs/SETUP.md) para IntelliJ, firmware USB y pruebas, y
 [CONTROL_PROTOCOL](docs/CONTROL_PROTOCOL.md) para el contrato HTTP y las carreras con STOP.
@@ -113,5 +116,20 @@ Consulta [SETUP](docs/SETUP.md) para IntelliJ, firmware USB y pruebas, y
 El ESP32 de sensores conserva temperatura y humedad ambiental DHT11, pH de demostración
 y añade suelo analógico en GPIO35. Sin calibración devuelve `null`; las otras lecturas
 se guardan normalmente. V4 añade columnas opcionales sin alterar mediciones antiguas.
-El Random Forest desplegado sigue usando **temperature, humidity, ph**; suelo no participa.
+El Random Forest usa **temperature, humidity, ph, soilMoisture**. Sin suelo válido la
+medición se guarda, pero la recomendación queda pendiente. V6 identifica el modelo de
+cada predicción nueva para distinguirla de los resultados históricos.
 Consulta [calibración e investigación de datos](docs/SETUP.md#humedad-del-suelo-y-modelo).
+
+
+### Dashboard React
+
+La interfaz única vive en `frontend/` (React + TypeScript + Vite + Tailwind).
+`npm ci` instala el workspace. `npm run dev` abre Vite en `http://127.0.0.1:5173`
+y envía `/csrf`, `/sensors` y `/movement` al backend en `http://127.0.0.1:18080`.
+Usa `PLANT_BACKEND_URL` para cambiar únicamente el proxy de desarrollo.
+
+`npm run typecheck`, `npm run lint`, `npm test` y `npm run build` verifican el frontend.
+Maven ejecuta el build en `generate-resources` y empaqueta los assets en el JAR.
+Docker compila Vite en una etapa Node; producción ejecuta únicamente Spring y Python.
+No se versionan los assets generados. Detalles y validación: [migración React](docs/REACT_MIGRATION.md).

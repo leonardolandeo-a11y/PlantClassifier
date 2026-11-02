@@ -1,0 +1,1 @@
+export function Header() { return <header className="header"><a href="/" className="brand"><span className="brand-icon">✳</span> PlantClassifier <small>FIELD LAB</small></a><span className="badge">Laboratorio experimental</span></header>; }

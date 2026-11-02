@@ -26,7 +26,8 @@ int main() {
   assert(readSensors(dht, [&](int pin) { assert(pin == 34 || pin == 35); ++calls; return 2048; }, sample));
   assert(calls == 16 && dht.reads == 2);
   assert(sample.temperature == 25 && sample.humidity == 60 && fabs(sample.ph - 7) < .01);
-  assert(isnan(sample.soilMoisture));
+  float expected = calibratedSoil(2048, SOIL_DRY_RAW, SOIL_WET_RAW);
+  assert(isnan(expected) ? isnan(sample.soilMoisture) : sample.soilMoisture == expected);
   assert(readSensors(dht, [](int pin) { return pin == PH_PIN ? 1024 : 3000; }, sample));
   assert(sample.soilRaw == 3000 && fabs(sample.ph - 3.5) < .01 && sample.humidity == 60);
   assert(readSensors(dht, [](int pin) { return pin == PH_PIN ? 1024 : 0; }, sample));

@@ -29,6 +29,7 @@ export class ControlRejected extends Error {}
 export type ControlState = "IDLE" | "ACQUIRING" | "ACTIVE" | "STOPPING" | "ERROR";
 
 export class MovementControl {
+    private disposed = false;
     private session: string | null = null;
     private sequence = 0;
     private generation = 0;
@@ -49,13 +50,16 @@ export class MovementControl {
         return this.session ? "ACTIVE" : "IDLE";
     }
 
+    dispose(): void { this.disposed = true; this.stop(); }
+
     set(command: Command): void {
+        if (this.disposed) return;
         if (command === "STOP") { this.stop(); return; }
         this.desired = command;
         this.advance();
     }
     private advance(): void {
-        if (this.acquiring || this.stopping || this.desired === "STOP") return;
+        if (this.disposed || this.acquiring || this.stopping || this.desired === "STOP") return;
         if (!this.session) { void this.acquire(); return; }
         if (!this.inFlight) { clearTimeout(this.timer); void this.pump(); }
     }

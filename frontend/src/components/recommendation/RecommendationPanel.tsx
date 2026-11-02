@@ -1,0 +1,3 @@
+import type { CapturePhase, SensorData } from '../../types/sensor';
+import { RecommendationStatus } from './RecommendationStatus';
+export function RecommendationPanel({data, phase}: {data: SensorData | null; phase: CapturePhase}) { return <section className="panel recommendation"><div className="eyebrow">ANÁLISIS DEL CULTIVO</div><h2>Recomendación inteligente</h2><div className="plant-symbol" aria-hidden="true">♧</div><RecommendationStatus data={data} phase={phase} /><div className="model-note"><span className="badge">Random Forest</span><p>Modelo experimental con datos sintéticos. Orientación de laboratorio, no asesoría agronómica.</p><small>synthetic-five-crops-v2 · 4 variables · 5 cultivos</small></div></section>; }

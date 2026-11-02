@@ -1,0 +1,1058 @@
+{
+  "seed": 42,
+  "dataset_sha256": "267f91c8767339a4a562dbb1326c097990281aa0cb49d2a8bf3cf9e42169bb31",
+  "model_sha256": "9f1e04c6eaa00da092aefc3efb75a20dbd0ebb3d99528784e4665158e365d626",
+  "features": [
+    "temperature",
+    "humidity",
+    "ph",
+    "soilMoisture"
+  ],
+  "rows": 11000,
+  "duplicates": 0,
+  "missing": 0,
+  "candidate_parameters": {
+    "n_estimators": 200,
+    "min_samples_leaf": 5
+  },
+  "acceptance_gates": {
+    "max_accuracy_loss": 0.01,
+    "max_macro_f1_loss": 0.01,
+    "min_upper_tail_gain": 0.05,
+    "max_lower_tail_loss": 0.01,
+    "max_per_crop_f1_loss": 0.03,
+    "max_brier_increase": 0
+  },
+  "baseline": {
+    "accuracy": 0.8586363636363636,
+    "classification": {
+      "frijol": {
+        "precision": 0.8431372549019608,
+        "recall": 0.7818181818181819,
+        "f1-score": 0.8113207547169812,
+        "support": 440.0
+      },
+      "lechuga": {
+        "precision": 0.9247787610619469,
+        "recall": 0.95,
+        "f1-score": 0.9372197309417041,
+        "support": 440.0
+      },
+      "melón": {
+        "precision": 0.8371559633027523,
+        "recall": 0.8295454545454546,
+        "f1-score": 0.8333333333333334,
+        "support": 440.0
+      },
+      "sandía": {
+        "precision": 0.8548009367681498,
+        "recall": 0.8295454545454546,
+        "f1-score": 0.8419838523644751,
+        "support": 440.0
+      },
+      "tomate": {
+        "precision": 0.8322851153039832,
+        "recall": 0.9022727272727272,
+        "f1-score": 0.8658669574700109,
+        "support": 440.0
+      },
+      "accuracy": 0.8586363636363636,
+      "macro avg": {
+        "precision": 0.8584316062677585,
+        "recall": 0.8586363636363636,
+        "f1-score": 0.857944925765301,
+        "support": 2200.0
+      },
+      "weighted avg": {
+        "precision": 0.8584316062677586,
+        "recall": 0.8586363636363636,
+        "f1-score": 0.8579449257653011,
+        "support": 2200.0
+      }
+    },
+    "brier_multiclass_sum": 0.20761954545454545,
+    "log_loss": 0.4155125170700224,
+    "top_label_ece_10_bins": 0.013195454545454444,
+    "reliability_bins": [
+      {
+        "low": 0.2,
+        "count": 1,
+        "confidence": 0.3,
+        "accuracy": 0.0
+      },
+      {
+        "low": 0.30000000000000004,
+        "count": 23,
+        "confidence": 0.3621739130434782,
+        "accuracy": 0.34782608695652173
+      },
+      {
+        "low": 0.4,
+        "count": 78,
+        "confidence": 0.45038461538461544,
+        "accuracy": 0.44871794871794873
+      },
+      {
+        "low": 0.5,
+        "count": 183,
+        "confidence": 0.5448633879781422,
+        "accuracy": 0.5901639344262295
+      },
+      {
+        "low": 0.6000000000000001,
+        "count": 186,
+        "confidence": 0.6576881720430108,
+        "accuracy": 0.6666666666666666
+      },
+      {
+        "low": 0.7000000000000001,
+        "count": 178,
+        "confidence": 0.7527528089887641,
+        "accuracy": 0.8146067415730337
+      },
+      {
+        "low": 0.8,
+        "count": 288,
+        "confidence": 0.8487847222222222,
+        "accuracy": 0.8298611111111112
+      },
+      {
+        "low": 0.9,
+        "count": 1248,
+        "confidence": 0.9736778846153847,
+        "accuracy": 0.9751602564102564
+      }
+    ]
+  },
+  "candidate": {
+    "accuracy": 0.8668181818181818,
+    "classification": {
+      "frijol": {
+        "precision": 0.8433734939759037,
+        "recall": 0.7954545454545454,
+        "f1-score": 0.8187134502923976,
+        "support": 440.0
+      },
+      "lechuga": {
+        "precision": 0.9373601789709173,
+        "recall": 0.9522727272727273,
+        "f1-score": 0.9447576099210823,
+        "support": 440.0
+      },
+      "melón": {
+        "precision": 0.8571428571428571,
+        "recall": 0.8454545454545455,
+        "f1-score": 0.851258581235698,
+        "support": 440.0
+      },
+      "sandía": {
+        "precision": 0.8717339667458432,
+        "recall": 0.8340909090909091,
+        "f1-score": 0.8524970963995354,
+        "support": 440.0
+      },
+      "tomate": {
+        "precision": 0.8260869565217391,
+        "recall": 0.9068181818181819,
+        "f1-score": 0.8645720476706392,
+        "support": 440.0
+      },
+      "accuracy": 0.8668181818181818,
+      "macro avg": {
+        "precision": 0.8671394906714521,
+        "recall": 0.8668181818181818,
+        "f1-score": 0.8663597571038706,
+        "support": 2200.0
+      },
+      "weighted avg": {
+        "precision": 0.8671394906714521,
+        "recall": 0.8668181818181818,
+        "f1-score": 0.8663597571038705,
+        "support": 2200.0
+      }
+    },
+    "brier_multiclass_sum": 0.1983110787885496,
+    "log_loss": 0.3571630315722176,
+    "top_label_ece_10_bins": 0.027524159022346388,
+    "reliability_bins": [
+      {
+        "low": 0.30000000000000004,
+        "count": 34,
+        "confidence": 0.3605240167639834,
+        "accuracy": 0.35294117647058826
+      },
+      {
+        "low": 0.4,
+        "count": 86,
+        "confidence": 0.4600699763235236,
+        "accuracy": 0.45348837209302323
+      },
+      {
+        "low": 0.5,
+        "count": 181,
+        "confidence": 0.5500282892764972,
+        "accuracy": 0.6298342541436464
+      },
+      {
+        "low": 0.6000000000000001,
+        "count": 194,
+        "confidence": 0.649851648287584,
+        "accuracy": 0.7268041237113402
+      },
+      {
+        "low": 0.7000000000000001,
+        "count": 236,
+        "confidence": 0.751145426288665,
+        "accuracy": 0.7966101694915254
+      },
+      {
+        "low": 0.8,
+        "count": 301,
+        "confidence": 0.8548955372767203,
+        "accuracy": 0.8803986710963455
+      },
+      {
+        "low": 0.9,
+        "count": 1168,
+        "confidence": 0.9726459479737855,
+        "accuracy": 0.9828767123287672
+      }
+    ]
+  },
+  "importance": {
+    "temperature": {
+      "impurity": 0.4443407264996397,
+      "permutation_mean": 0.4633181818181818,
+      "permutation_std": 0.009063709309453879
+    },
+    "humidity": {
+      "impurity": 0.16011157455965547,
+      "permutation_mean": 0.09345454545454546,
+      "permutation_std": 0.005111161017043846
+    },
+    "ph": {
+      "impurity": 0.24944477207712537,
+      "permutation_mean": 0.2131818181818182,
+      "permutation_std": 0.007169725146592856
+    },
+    "soilMoisture": {
+      "impurity": 0.14610292686357948,
+      "permutation_mean": 0.08231818181818183,
+      "permutation_std": 0.004829532085542986
+    }
+  },
+  "ablation_without_soil": {
+    "accuracy": 0.81,
+    "classification": {
+      "frijol": {
+        "precision": 0.7400990099009901,
+        "recall": 0.6795454545454546,
+        "f1-score": 0.7085308056872038,
+        "support": 440.0
+      },
+      "lechuga": {
+        "precision": 0.8788546255506607,
+        "recall": 0.9068181818181819,
+        "f1-score": 0.8926174496644296,
+        "support": 440.0
+      },
+      "melón": {
+        "precision": 0.8221709006928406,
+        "recall": 0.8090909090909091,
+        "f1-score": 0.8155784650630011,
+        "support": 440.0
+      },
+      "sandía": {
+        "precision": 0.8360655737704918,
+        "recall": 0.8113636363636364,
+        "f1-score": 0.8235294117647058,
+        "support": 440.0
+      },
+      "tomate": {
+        "precision": 0.7697095435684648,
+        "recall": 0.8431818181818181,
+        "f1-score": 0.8047722342733189,
+        "support": 440.0
+      },
+      "accuracy": 0.81,
+      "macro avg": {
+        "precision": 0.8093799306966896,
+        "recall": 0.8099999999999999,
+        "f1-score": 0.8090056732905317,
+        "support": 2200.0
+      },
+      "weighted avg": {
+        "precision": 0.8093799306966896,
+        "recall": 0.81,
+        "f1-score": 0.8090056732905319,
+        "support": 2200.0
+      }
+    },
+    "brier_multiclass_sum": 0.2625641818181818,
+    "log_loss": 0.535374292654402,
+    "top_label_ece_10_bins": 0.011531818181818197,
+    "reliability_bins": [
+      {
+        "low": 0.2,
+        "count": 4,
+        "confidence": 0.2975,
+        "accuracy": 0.0
+      },
+      {
+        "low": 0.30000000000000004,
+        "count": 25,
+        "confidence": 0.3652,
+        "accuracy": 0.36
+      },
+      {
+        "low": 0.4,
+        "count": 93,
+        "confidence": 0.4526881720430108,
+        "accuracy": 0.3978494623655914
+      },
+      {
+        "low": 0.5,
+        "count": 213,
+        "confidence": 0.5453521126760564,
+        "accuracy": 0.5352112676056338
+      },
+      {
+        "low": 0.6000000000000001,
+        "count": 214,
+        "confidence": 0.6576168224299066,
+        "accuracy": 0.6121495327102804
+      },
+      {
+        "low": 0.7000000000000001,
+        "count": 220,
+        "confidence": 0.7500454545454545,
+        "accuracy": 0.75
+      },
+      {
+        "low": 0.8,
+        "count": 345,
+        "confidence": 0.8481739130434782,
+        "accuracy": 0.8521739130434782
+      },
+      {
+        "low": 0.9,
+        "count": 1055,
+        "confidence": 0.9665118483412323,
+        "accuracy": 0.9611374407582939
+      }
+    ]
+  },
+  "soil_sensitivity_within_class_quantiles": {
+    "baseline": {
+      "rows": 2200,
+      "class_change_fraction": 0.27136363636363636,
+      "mean_total_variation": 0.2675272727272727
+    },
+    "candidate": {
+      "rows": 2200,
+      "class_change_fraction": 0.2677272727272727,
+      "mean_total_variation": 0.2590811081650371
+    }
+  },
+  "stress": {
+    "upper_tail": {
+      "train_rows": 8799,
+      "test_rows": 2201,
+      "test_class_counts": {
+        "tomate": 441,
+        "melón": 440,
+        "frijol": 440,
+        "lechuga": 440,
+        "sandía": 440
+      },
+      "baseline": {
+        "accuracy": 0.4425261244888687,
+        "classification": {
+          "frijol": {
+            "precision": 0.5,
+            "recall": 0.0022727272727272726,
+            "f1-score": 0.004524886877828055,
+            "support": 440.0
+          },
+          "lechuga": {
+            "precision": 0.5104408352668214,
+            "recall": 1.0,
+            "f1-score": 0.6758832565284179,
+            "support": 440.0
+          },
+          "melón": {
+            "precision": 0.47685185185185186,
+            "recall": 0.7022727272727273,
+            "f1-score": 0.5680147058823529,
+            "support": 440.0
+          },
+          "sandía": {
+            "precision": 1.0,
+            "recall": 0.05,
+            "f1-score": 0.09523809523809523,
+            "support": 440.0
+          },
+          "tomate": {
+            "precision": 0.3028485757121439,
+            "recall": 0.4580498866213152,
+            "f1-score": 0.36462093862815886,
+            "support": 441.0
+          },
+          "accuracy": 0.4425261244888687,
+          "macro avg": {
+            "precision": 0.5580282525661634,
+            "recall": 0.44251906823335396,
+            "f1-score": 0.3416563766309706,
+            "support": 2201.0
+          },
+          "weighted avg": {
+            "precision": 0.5579123145030765,
+            "recall": 0.4425261244888687,
+            "f1-score": 0.3416668103256536,
+            "support": 2201.0
+          }
+        },
+        "brier_multiclass_sum": 0.8023051340299864,
+        "log_loss": 5.003572921914478,
+        "top_label_ece_10_bins": 0.2853430258973194,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 27,
+            "confidence": 0.36962962962962964,
+            "accuracy": 0.2222222222222222
+          },
+          {
+            "low": 0.4,
+            "count": 217,
+            "confidence": 0.45414746543778806,
+            "accuracy": 0.28110599078341014
+          },
+          {
+            "low": 0.5,
+            "count": 607,
+            "confidence": 0.5404118616144975,
+            "accuracy": 0.3772652388797364
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 286,
+            "confidence": 0.6448601398601399,
+            "accuracy": 0.5594405594405595
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 110,
+            "confidence": 0.7503636363636366,
+            "accuracy": 0.2727272727272727
+          },
+          {
+            "low": 0.8,
+            "count": 147,
+            "confidence": 0.849047619047619,
+            "accuracy": 0.1360544217687075
+          },
+          {
+            "low": 0.9,
+            "count": 771,
+            "confidence": 0.9827496757457848,
+            "accuracy": 0.5862516212710766
+          }
+        ]
+      },
+      "candidate": {
+        "accuracy": 0.5656519763743753,
+        "classification": {
+          "frijol": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 440.0
+          },
+          "lechuga": {
+            "precision": 0.6303724928366762,
+            "recall": 1.0,
+            "f1-score": 0.773286467486819,
+            "support": 440.0
+          },
+          "melón": {
+            "precision": 0.5076923076923077,
+            "recall": 0.825,
+            "f1-score": 0.6285714285714286,
+            "support": 440.0
+          },
+          "sandía": {
+            "precision": 1.0,
+            "recall": 0.0659090909090909,
+            "f1-score": 0.12366737739872068,
+            "support": 440.0
+          },
+          "tomate": {
+            "precision": 0.5448548812664907,
+            "recall": 0.9365079365079365,
+            "f1-score": 0.6889074228523769,
+            "support": 441.0
+          },
+          "accuracy": 0.5656519763743753,
+          "macro avg": {
+            "precision": 0.536583936359095,
+            "recall": 0.5654834054834055,
+            "f1-score": 0.44288653926186905,
+            "support": 2201.0
+          },
+          "weighted avg": {
+            "precision": 0.5365876941714108,
+            "recall": 0.5656519763743753,
+            "f1-score": 0.44299831612856166,
+            "support": 2201.0
+          }
+        },
+        "brier_multiclass_sum": 0.7021718168463544,
+        "log_loss": 2.1030840120961205,
+        "top_label_ece_10_bins": 0.2544353995868065,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 23,
+            "confidence": 0.37273395070757603,
+            "accuracy": 0.17391304347826086
+          },
+          {
+            "low": 0.4,
+            "count": 187,
+            "confidence": 0.45331968600900097,
+            "accuracy": 0.2620320855614973
+          },
+          {
+            "low": 0.5,
+            "count": 392,
+            "confidence": 0.5538920063292635,
+            "accuracy": 0.4336734693877551
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 629,
+            "confidence": 0.6549322220668573,
+            "accuracy": 0.8012718600953895
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 141,
+            "confidence": 0.7387758485151283,
+            "accuracy": 0.41134751773049644
+          },
+          {
+            "low": 0.8,
+            "count": 162,
+            "confidence": 0.8499462124938469,
+            "accuracy": 0.20987654320987653
+          },
+          {
+            "low": 0.9,
+            "count": 667,
+            "confidence": 0.9844627773237622,
+            "accuracy": 0.638680659670165
+          }
+        ]
+      }
+    },
+    "lower_tail": {
+      "train_rows": 8799,
+      "test_rows": 2201,
+      "test_class_counts": {
+        "frijol": 441,
+        "tomate": 440,
+        "melón": 440,
+        "lechuga": 440,
+        "sandía": 440
+      },
+      "baseline": {
+        "accuracy": 0.3793730122671513,
+        "classification": {
+          "frijol": {
+            "precision": 0.32893652102225884,
+            "recall": 0.9047619047619048,
+            "f1-score": 0.48246674727932287,
+            "support": 441.0
+          },
+          "lechuga": {
+            "precision": 1.0,
+            "recall": 0.0022727272727272726,
+            "f1-score": 0.0045351473922902496,
+            "support": 440.0
+          },
+          "melón": {
+            "precision": 0.5,
+            "recall": 0.020454545454545454,
+            "f1-score": 0.039301310043668124,
+            "support": 440.0
+          },
+          "sandía": {
+            "precision": 0.4402907580477674,
+            "recall": 0.9636363636363636,
+            "f1-score": 0.6044191019244476,
+            "support": 440.0
+          },
+          "tomate": {
+            "precision": 0.3333333333333333,
+            "recall": 0.004545454545454545,
+            "f1-score": 0.008968609865470852,
+            "support": 440.0
+          },
+          "accuracy": 0.3793730122671513,
+          "macro avg": {
+            "precision": 0.5205121224806719,
+            "recall": 0.37913419913419916,
+            "f1-score": 0.22793818330103993,
+            "support": 2201.0
+          },
+          "weighted avg": {
+            "precision": 0.5204250822255795,
+            "recall": 0.3793730122671513,
+            "f1-score": 0.228053825538195,
+            "support": 2201.0
+          }
+        },
+        "brier_multiclass_sum": 0.977507223989096,
+        "log_loss": 4.507029679081003,
+        "top_label_ece_10_bins": 0.44803725579282144,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 13,
+            "confidence": 0.3692307692307693,
+            "accuracy": 0.0
+          },
+          {
+            "low": 0.4,
+            "count": 84,
+            "confidence": 0.4541666666666667,
+            "accuracy": 0.14285714285714285
+          },
+          {
+            "low": 0.5,
+            "count": 146,
+            "confidence": 0.550068493150685,
+            "accuracy": 0.2465753424657534
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 242,
+            "confidence": 0.662603305785124,
+            "accuracy": 0.2231404958677686
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 246,
+            "confidence": 0.7484959349593496,
+            "accuracy": 0.34552845528455284
+          },
+          {
+            "low": 0.8,
+            "count": 393,
+            "confidence": 0.8520101781170484,
+            "accuracy": 0.3104325699745547
+          },
+          {
+            "low": 0.9,
+            "count": 1060,
+            "confidence": 0.9552358490566037,
+            "accuracy": 0.49056603773584906
+          }
+        ]
+      },
+      "candidate": {
+        "accuracy": 0.3870967741935484,
+        "classification": {
+          "frijol": {
+            "precision": 0.3422546634225466,
+            "recall": 0.9569160997732427,
+            "f1-score": 0.5041816009557945,
+            "support": 441.0
+          },
+          "lechuga": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 440.0
+          },
+          "melón": {
+            "precision": 0.6111111111111112,
+            "recall": 0.025,
+            "f1-score": 0.048034934497816595,
+            "support": 440.0
+          },
+          "sandía": {
+            "precision": 0.4418604651162791,
+            "recall": 0.95,
+            "f1-score": 0.6031746031746031,
+            "support": 440.0
+          },
+          "tomate": {
+            "precision": 0.25,
+            "recall": 0.0022727272727272726,
+            "f1-score": 0.0045045045045045045,
+            "support": 440.0
+          },
+          "accuracy": 0.3870967741935484,
+          "macro avg": {
+            "precision": 0.32904524792998735,
+            "recall": 0.386837765409194,
+            "f1-score": 0.2319791286265437,
+            "support": 2201.0
+          },
+          "weighted avg": {
+            "precision": 0.3290512494817786,
+            "recall": 0.3870967741935484,
+            "f1-score": 0.2321028008084289,
+            "support": 2201.0
+          }
+        },
+        "brier_multiclass_sum": 0.9084388608537216,
+        "log_loss": 2.0099250460155056,
+        "top_label_ece_10_bins": 0.4391635031588729,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 21,
+            "confidence": 0.3685666921299661,
+            "accuracy": 0.3333333333333333
+          },
+          {
+            "low": 0.4,
+            "count": 108,
+            "confidence": 0.4573862346958298,
+            "accuracy": 0.1388888888888889
+          },
+          {
+            "low": 0.5,
+            "count": 162,
+            "confidence": 0.5526603601912439,
+            "accuracy": 0.1111111111111111
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 229,
+            "confidence": 0.6432091991700609,
+            "accuracy": 0.1222707423580786
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 210,
+            "confidence": 0.7513292105997059,
+            "accuracy": 0.21904761904761905
+          },
+          {
+            "low": 0.8,
+            "count": 420,
+            "confidence": 0.8579488173004016,
+            "accuracy": 0.29285714285714287
+          },
+          {
+            "low": 0.9,
+            "count": 1051,
+            "confidence": 0.957676245592548,
+            "accuracy": 0.5851569933396765
+          }
+        ]
+      }
+    },
+    "global_above_70": {
+      "train_rows": 9145,
+      "test_rows": 1855,
+      "test_class_counts": {
+        "lechuga": 1077,
+        "tomate": 506,
+        "melón": 142,
+        "frijol": 80,
+        "sandía": 50
+      },
+      "baseline": {
+        "accuracy": 0.9115902964959569,
+        "classification": {
+          "frijol": {
+            "precision": 0.39344262295081966,
+            "recall": 0.6,
+            "f1-score": 0.4752475247524752,
+            "support": 80.0
+          },
+          "lechuga": {
+            "precision": 0.9837476099426387,
+            "recall": 0.9554317548746518,
+            "f1-score": 0.96938294865756,
+            "support": 1077.0
+          },
+          "melón": {
+            "precision": 0.8854961832061069,
+            "recall": 0.8169014084507042,
+            "f1-score": 0.8498168498168498,
+            "support": 142.0
+          },
+          "sandía": {
+            "precision": 0.7678571428571429,
+            "recall": 0.86,
+            "f1-score": 0.8113207547169812,
+            "support": 50.0
+          },
+          "tomate": {
+            "precision": 0.91,
+            "recall": 0.8992094861660079,
+            "f1-score": 0.904572564612326,
+            "support": 506.0
+          },
+          "accuracy": 0.9115902964959569,
+          "macro avg": {
+            "precision": 0.7881087117913417,
+            "recall": 0.8263085298982729,
+            "f1-score": 0.8020681285112385,
+            "support": 1855.0
+          },
+          "weighted avg": {
+            "precision": 0.9248328306751546,
+            "recall": 0.9115902964959569,
+            "f1-score": 0.9169805853304954,
+            "support": 1855.0
+          }
+        },
+        "brier_multiclass_sum": 0.124624474393531,
+        "log_loss": 0.2936515732073954,
+        "top_label_ece_10_bins": 0.05483557951482472,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 14,
+            "confidence": 0.36214285714285716,
+            "accuracy": 0.2857142857142857
+          },
+          {
+            "low": 0.4,
+            "count": 58,
+            "confidence": 0.4475862068965516,
+            "accuracy": 0.3793103448275862
+          },
+          {
+            "low": 0.5,
+            "count": 138,
+            "confidence": 0.5420289855072464,
+            "accuracy": 0.5362318840579711
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 119,
+            "confidence": 0.6518487394957984,
+            "accuracy": 0.7394957983193278
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 126,
+            "confidence": 0.7496031746031747,
+            "accuracy": 0.9285714285714286
+          },
+          {
+            "low": 0.8,
+            "count": 271,
+            "confidence": 0.8519926199261992,
+            "accuracy": 0.9704797047970479
+          },
+          {
+            "low": 0.9,
+            "count": 1118,
+            "confidence": 0.9688729874776387,
+            "accuracy": 0.9964221824686941
+          }
+        ]
+      },
+      "candidate": {
+        "accuracy": 0.925067385444744,
+        "classification": {
+          "frijol": {
+            "precision": 0.5212765957446809,
+            "recall": 0.6125,
+            "f1-score": 0.5632183908045977,
+            "support": 80.0
+          },
+          "lechuga": {
+            "precision": 0.9857142857142858,
+            "recall": 0.9610027855153204,
+            "f1-score": 0.9732016925246827,
+            "support": 1077.0
+          },
+          "melón": {
+            "precision": 0.8581560283687943,
+            "recall": 0.852112676056338,
+            "f1-score": 0.8551236749116607,
+            "support": 142.0
+          },
+          "sandía": {
+            "precision": 0.7924528301886793,
+            "recall": 0.84,
+            "f1-score": 0.8155339805825242,
+            "support": 50.0
+          },
+          "tomate": {
+            "precision": 0.90715667311412,
+            "recall": 0.9268774703557312,
+            "f1-score": 0.916911045943304,
+            "support": 506.0
+          },
+          "accuracy": 0.925067385444744,
+          "macro avg": {
+            "precision": 0.812951282626112,
+            "recall": 0.8384985863854778,
+            "f1-score": 0.8247977569533539,
+            "support": 1855.0
+          },
+          "weighted avg": {
+            "precision": 0.9292822035080366,
+            "recall": 0.925067385444744,
+            "f1-score": 0.9268770588826657,
+            "support": 1855.0
+          }
+        },
+        "brier_multiclass_sum": 0.1157673868650727,
+        "log_loss": 0.23186635897551264,
+        "top_label_ece_10_bins": 0.05519844962518301,
+        "reliability_bins": [
+          {
+            "low": 0.30000000000000004,
+            "count": 16,
+            "confidence": 0.3575460821658856,
+            "accuracy": 0.4375
+          },
+          {
+            "low": 0.4,
+            "count": 57,
+            "confidence": 0.4536961012643327,
+            "accuracy": 0.45614035087719296
+          },
+          {
+            "low": 0.5,
+            "count": 116,
+            "confidence": 0.5555386870901302,
+            "accuracy": 0.5862068965517241
+          },
+          {
+            "low": 0.6000000000000001,
+            "count": 136,
+            "confidence": 0.6469545576533622,
+            "accuracy": 0.7794117647058824
+          },
+          {
+            "low": 0.7000000000000001,
+            "count": 122,
+            "confidence": 0.7499631482018131,
+            "accuracy": 0.9180327868852459
+          },
+          {
+            "low": 0.8,
+            "count": 239,
+            "confidence": 0.8609056211177415,
+            "accuracy": 0.9748953974895398
+          },
+          {
+            "low": 0.9,
+            "count": 1169,
+            "confidence": 0.9686443163280501,
+            "accuracy": 0.9957228400342173
+          }
+        ]
+      }
+    }
+  },
+  "candidate_gate_results": {
+    "accuracy": true,
+    "macro_f1": true,
+    "per_crop": true,
+    "brier": true,
+    "upper_tail": true,
+    "lower_tail": true
+  },
+  "candidate_passes_all_gates": true,
+  "stability": [
+    {
+      "seed": 17,
+      "split": "random",
+      "model": "baseline",
+      "accuracy": 0.8568181818181818,
+      "f1_macro": 0.8563999605087724
+    },
+    {
+      "seed": 17,
+      "split": "random",
+      "model": "candidate",
+      "accuracy": 0.8636363636363636,
+      "f1_macro": 0.8631681464894777
+    },
+    {
+      "seed": 17,
+      "split": "upper_tail",
+      "model": "baseline",
+      "accuracy": 0.5129486597001363,
+      "f1_macro": 0.4023871062426193
+    },
+    {
+      "seed": 17,
+      "split": "upper_tail",
+      "model": "candidate",
+      "accuracy": 0.5579282144479782,
+      "f1_macro": 0.43349302001856727
+    },
+    {
+      "seed": 17,
+      "split": "lower_tail",
+      "model": "baseline",
+      "accuracy": 0.3839164016356202,
+      "f1_macro": 0.23275266831596703
+    },
+    {
+      "seed": 17,
+      "split": "lower_tail",
+      "model": "candidate",
+      "accuracy": 0.38755111313039525,
+      "f1_macro": 0.2316329290348492
+    },
+    {
+      "seed": 2026,
+      "split": "random",
+      "model": "baseline",
+      "accuracy": 0.8572727272727273,
+      "f1_macro": 0.8569911208070558
+    },
+    {
+      "seed": 2026,
+      "split": "random",
+      "model": "candidate",
+      "accuracy": 0.860909090909091,
+      "f1_macro": 0.8605489120883254
+    },
+    {
+      "seed": 2026,
+      "split": "upper_tail",
+      "model": "baseline",
+      "accuracy": 0.5211267605633803,
+      "f1_macro": 0.40273772935751334
+    },
+    {
+      "seed": 2026,
+      "split": "upper_tail",
+      "model": "candidate",
+      "accuracy": 0.5638346206269877,
+      "f1_macro": 0.4392294876070329
+    },
+    {
+      "seed": 2026,
+      "split": "lower_tail",
+      "model": "baseline",
+      "accuracy": 0.38073602907769194,
+      "f1_macro": 0.23075209713643755
+    },
+    {
+      "seed": 2026,
+      "split": "lower_tail",
+      "model": "candidate",
+      "accuracy": 0.39436619718309857,
+      "f1_macro": 0.24398319900859056
+    }
+  ],
+  "limitations": "Synthetic interpolation only. No field outcomes or generator groups; histogram overlap depends on bins. Marginal bounds do not prove joint support. Counterfactual changes have no suitability ground truth. ECE depends on binning. Brier/log loss measure discrimination and calibration together. No model promoted automatically."
+}

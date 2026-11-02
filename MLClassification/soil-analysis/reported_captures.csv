@@ -1,0 +1,4 @@
+temperature,humidity,ph,soilMoisture,winner,p_frijol,p_lechuga,p_melón,p_sandía,p_tomate
+26.7,68.4,9.1,0,melón,0.03,0.0,0.97,0.0,0.0
+26.7,68.3,9.07,58,melón,0.0,0.0,1.0,0.0,0.0
+26.7,67.8,9.11,100,melón,0.0,0.01,0.95,0.0,0.04

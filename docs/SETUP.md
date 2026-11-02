@@ -54,8 +54,8 @@ Configura las variables anteriores en IntelliJ, en particular los tres valores
 Arranca `PlantClassifierApplication`; desde un terminal con esas variables también
 puedes ejecutar `./mvnw spring-boot:run`. La JVM nativa escucha en `127.0.0.1:8080`;
 configura `SERVER_PORT=18080` para usar la misma URL local. Mantén `SERVER_ADDRESS=127.0.0.1`.
-`npm run watch` recompila TypeScript y CSS durante el desarrollo y cierra ambos procesos.
-Después de cambiar el frontend, guarda también los JS/CSS generados con `npm run build`.
+`npm run dev` ejecuta Vite en http://127.0.0.1:5173 con proxy al backend en el puerto 18080.
+`npm run build` genera los assets en `frontend/dist` y los sincroniza a `target/generated-resources/frontend/static`. Maven los empaqueta automáticamente; no se guardan JS/CSS generados en Git.
 
 ## Dos placas independientes
 
@@ -235,11 +235,11 @@ sin ejecutar el archivo ni imprimir secretos; por eso se conserva.
 - Flyway o credenciales PostgreSQL: seguir [MIGRATIONS](MIGRATIONS.md), sin borrar datos.
 
 ```bash
-.venv/bin/python MLClassification/predict.py 25 60 7
+.venv/bin/python MLClassification/predict.py 25 60 7 45
 .venv/bin/python MLClassification/train.py --report /tmp/evaluation.json
 ```
 
-El orden es temperatura, humedad, pH. No sobrescribas `model.pkl`; solo carga modelos
+El orden es temperatura, humedad ambiental, pH, humedad del suelo. No sobrescribas `model.pkl`; solo carga modelos
 confiables. El informe de evaluación describe una partición 80/20 con semilla 42,
 no una validación de campo del modelo desplegado. Las pruebas físicas pendientes son
 identidad/cableado de placas, DHT real, potenciómetro, alimentación, servo/motor,
@@ -279,34 +279,85 @@ mediciones y la procedencia; rechaza valores numéricos fuera de rango o sin ori
 V4 permite nulos históricos y no modifica V1–V3 ni secuencias. El ADC bruto solo se
 expone en el dispositivo: no requiere columnas ni controles nuevos en el dashboard.
 
-### Investigación ML (2026-11-01)
+### Modelo sintético de cinco cultivos (2026-11-01)
 
-`Data.csv` contiene 11 000 filas, 22 cultivos y 500 ejemplos por clase, con columnas
-`temperature,humidity,ph,label`. No contiene suelo, identificadores de parcela ni fechas.
-El historial registra su modificación en `ff893e8`, pero no acredita fuente primaria,
-licencia del dataset ni método de adquisición. No debe presentarse como evidencia de
-campo validada. Temperatura se interpreta en °C y humidity como humedad del aire;
-la falta de metadatos impide certificar instrumentos y unidades de origen.
+El CSV detectado es `MLClassification/Data.csv`, suministrado por el usuario como
+muestras sintéticas basadas en rangos agronómicos. No se aportó script generador,
+fuentes de esos rangos, grupos de generación ni licencia de redistribución verificable.
+No son mediciones de campo ni equivalen a evidencia agronómica. No se importó ningún
+dataset externo ni se inventaron filas. Se conservan los valores del CSV y su BOM UTF-8; se normalizaron únicamente
+los finales CRLF a LF, comprobando igualdad de las 11 000 filas. Su SHA-256 consta en evaluation.json.
 
-| Fuente examinada | Licencia declarada | Decisión |
-|---|---|---|
-| [CropRec-BD](https://data.mendeley.com/datasets/dtf278skpw/1) | CC BY 4.0 | Declara suelo, pH, aire y unas 3000 filas/9 cultivos; fechas contradictorias y escala/calibración no verificadas. No aprobado. |
-| [Crop recommendation](https://data.mendeley.com/datasets/vynxnppr7j/1) | CC BY 4.0 | Describe generación CTGAN; no acredita observaciones físicas conjuntas de suelo compatibles. |
-| [Crop Prediction](https://data.mendeley.com/datasets/2mht7hz98y/1) | CC BY 4.0 | 2200 filas/22 cultivos; lluvia y humedad ambiental, no humedad del suelo. |
+Hay exactamente 11 000 filas: 2200 de cada clase `frijol`, `tomate`, `sandía`, `melón`,
+`lechuga`. Solo hay cuatro entradas numéricas y la etiqueta; no hay columnas auxiliares
+que codifiquen directamente la clase. No hay nulos, infinitos, duplicados exactos ni
+vectores iguales con etiquetas contradictorias. Rangos observados:
 
-No se importó ningún candidato: **cero registros nuevos aprobados**, no cero registros
-existentes en esas fuentes. No se puede afirmar que no exista un dataset adecuado.
-Falta un archivo verificable con las cuatro mediciones por observación, diccionario
-de unidades, calibración transferible al sensor, licencia y etiquetas justificadas,
-además de parcela/fecha para separar grupos y evitar fuga. VWC y lluvia no sustituyen
-la escala resistiva. Sin esos datos no es legítimo entrenar cuatro variables.
+| Variable | Mínimo | Máximo | Interpretación en esta demostración |
+|---|---:|---:|---|
+| temperature | 12.02 | 34.99 | °C ambientales |
+| humidity | 25.18 | 78.99 | % de humedad del aire |
+| ph | 5.5 | 7.5 | pH; el dispositivo lo simula con potenciómetro |
+| soilMoisture | 20.15 | 90.83 | Escala 0–100 asumida por el dataset sintético |
 
-Se conserva `model.pkl` y el contrato de tres variables en Python y Java. `train.py`
-reentrena un candidato de evaluación con semilla 42 y división estratificada 80/20,
-elimina vectores duplicados y rechaza etiquetas contradictorias. Su informe incluye
-accuracy, precision/recall/F1 macro y weighted, matriz y distribución. La división
-aleatoria no descarta correlación ni datos sintéticos sin metadatos. Las métricas no
-son una validación independiente del artefacto desplegado, entrenado con todos los datos.
+La escala del CSV es numéricamente compatible, pero no se ha demostrado equivalencia
+entre sus rangos agronómicos y la calibración resistiva del dispositivo. No es contenido
+volumétrico de agua. Una calibración seca/húmeda no aporta por sí sola validez agrícola.
+
+Random Forest v2 usa 200 árboles, min_samples_leaf=5, semilla 42, n_jobs=2 y el orden compartido
+`temperature, humidity, ph, soilMoisture`. Se separa 80/20 estratificado tras comprobar
+vectores duplicados: 8800 entrenamiento y 2200 prueba, 440 por cultivo. El artefacto
+activado es ese mismo candidato, sin reentrenar sobre las filas de prueba.
+`evaluation.json` contiene matriz de confusión, precision/recall/F1 por cultivo,
+macro y weighted, rangos e importancia por permutación. Accuracy v2: 86.68%; precision
+macro: 86.71%; recall macro: 86.68%; F1 macro: 86.64%.
+
+La permutación del suelo reduce accuracy en 8.62 puntos porcentuales (v2, cinco repeticiones). Las pruebas
+mantienen las otras tres entradas fijas y encuentran cambios reales de clase y
+probabilidades al variar suelo, sin reglas que fuercen resultados. No se espera que
+cada pequeño cambio de suelo cambie de cultivo.
+
+**Generalización limitada:** un ensayo separado entrena sin el 20% superior de suelo
+de cada clase y evalúa en ese tramo: accuracy v2 56.57% (v1: 44.25%).
+En la cola inferior v2 solo alcanza 38.71%. Véase [el diagnóstico completo](SOIL_INFLUENCE_DIAGNOSIS.md). Es un ensayo de extrapolación,
+no una partición por grupos reales. Sin metadatos del generador no se puede descartar
+correlación entre muestras; la partición aleatoria estima principalmente interpolación.
+No comparar estas métricas con las del antiguo dataset de 22 clases como una mejora.
+
+Reproducción (la ruta de candidato debe ser nueva):
+
+```bash
+.venv/bin/python MLClassification/train.py --report /tmp/five-crops-evaluation.json --candidate /tmp/five-crops-candidate.pkl
+.venv/bin/python -m unittest discover -s MLClassification -p 'test_*.py'
+.venv/bin/python MLClassification/predict.py 25 60 7 45
+```
+
+`model.pkl` está identificado como `synthetic-five-crops-v2`.
+El respaldo v1 está en `MLClassification/soil-analysis/baseline.pkl`.
+El artefacto v2 contiene límites de entrenamiento y el predictor se abstiene fuera de ellos:
+stdout vacío, código 2; Spring guarda `OUT_OF_DOMAIN`, modelo v2 y predicción nula.
+No recorta ni rellena mediciones. El dashboard distingue este estado y evita resultados obsoletos. Python verifica orden,
+número de entradas, identificación y exactamente cinco clases antes de predecir.
+Spring valida rangos, pasa cuatro argumentos y limita las etiquetas recibidas. Se
+conservan timeout, límites de salida, concurrencia y limpieza del proceso.
+La copia `model.previous-3-features.pkl` conserva el artefacto anterior; no basta
+renombrarla para volver atrás: se necesita restaurar también el contrato Python/Java
+anterior. El nuevo predictor rechaza expresamente ese esquema de tres variables.
+`compression-report.json` corresponde al artefacto anterior, no al nuevo modelo.
+
+V5 conserva soilStatus y V6 añade prediction_model nullable. No se modifican migraciones
+anteriores ni se rellenan registros históricos. Capturas sin suelo, inválidas o pendientes
+de calibración se guardan PENDING y no invocan Python. Un fallo ML conserva FAILED.
+Las filas antiguas mantienen su predicción, pero el dashboard las identifica como
+históricas y pide otra captura; nunca las presenta como resultados del modelo nuevo.
+El simulador sin soilStatus se admite si tiene porcentaje válido y procedencia software.
+
+Para actualizar solo la app con sensores físicos y movimiento simulado, manteniendo
+la configuración y el volumen existentes:
+
+```bash
+docker compose -p plantclassifier-lab --env-file .env.lab -f docker-compose.yaml -f docker-compose.simulation.yaml -f /tmp/plantclassifier-sensor-real.yaml up -d --build --no-deps --force-recreate --wait app
+```
 
 ### Auditoría de complejidad
 

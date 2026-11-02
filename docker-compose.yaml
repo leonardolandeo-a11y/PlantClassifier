@@ -38,7 +38,7 @@ services:
       SENSOR_TEMPERATURE_MIN: ${SENSOR_TEMPERATURE_MIN:--40}
       SENSOR_TEMPERATURE_MAX: ${SENSOR_TEMPERATURE_MAX:-85}
     ports:
-      - "127.0.0.1:${APP_PORT:-18080}:8080"
+      - "0.0.0.0:${APP_PORT:-18080}:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3).read()"]
       interval: 15s

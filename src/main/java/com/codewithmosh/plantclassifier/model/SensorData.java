@@ -21,8 +21,10 @@ public class SensorData {
     private String temperatureSource;
     private String humiditySource;
     private String phSource;
+    @Column(length = 32) private String soilStatus;
     private Double soilMoisture;
     private String soilMoistureSource;
+    private String predictionModel;
     private String prediction;
     @Column(nullable = false) private String predictionStatus;
     private String predictionError;

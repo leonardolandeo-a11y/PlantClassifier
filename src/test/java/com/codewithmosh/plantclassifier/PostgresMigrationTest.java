@@ -18,7 +18,7 @@ class PostgresMigrationTest {
     }
     @Test void initializesFreshPostgresDatabase() throws Exception {
         String schema="test_"+UUID.randomUUID().toString().replace("-","");
-        var result=flyway(schema).migrate(); assertEquals(4,result.migrationsExecuted);
+        var result=flyway(schema).migrate(); assertEquals(6,result.migrationsExecuted);
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,captured_at,simulated,prediction_status) VALUES(nextval('sensor_data_seq'),7,20,60,CURRENT_TIMESTAMP,true,'PENDING')");
@@ -32,7 +32,7 @@ class PostgresMigrationTest {
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status) VALUES(501,7,20,60,'PENDING')");
-            assertEquals(1,flyway(schema).migrate().migrationsExecuted);
+            assertEquals(3,flyway(schema).migrate().migrationsExecuted);
             try(var rows=statement.executeQuery("SELECT humidity,soil_moisture,soil_moisture_source FROM sensor_data WHERE id=501")) {
                 assertTrue(rows.next()); assertEquals(60,rows.getDouble(1)); assertNull(rows.getObject(2)); assertNull(rows.getObject(3));
             }
@@ -41,6 +41,23 @@ class PostgresMigrationTest {
                 assertTrue(rows.next()); assertEquals(60,rows.getDouble(1)); assertEquals(45,rows.getDouble(2));
             }
             assertThrows(SQLException.class,()->statement.execute("UPDATE sensor_data SET soil_moisture=101"));
+        }
+    }
+    @Test void v5PreservesV4SoilAndLeavesHistoricalStatusUnknown() throws Exception {
+        String schema="v4_"+UUID.randomUUID().toString().replace("-","");
+        Flyway.configure().dataSource(url,user,password).schemas(schema)
+                .locations("classpath:db/migration").target("4").load().migrate();
+        try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
+            statement.execute("SET search_path TO "+schema);
+            statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status,soil_moisture) VALUES(501,7,20,60,'PENDING',75)");
+            assertEquals(2,flyway(schema).migrate().migrationsExecuted);
+            try(var rows=statement.executeQuery("SELECT soil_moisture,soil_status,prediction_model FROM sensor_data WHERE id=501")) {
+                assertTrue(rows.next()); assertEquals(75,rows.getDouble(1)); assertNull(rows.getString(2)); assertNull(rows.getString(3));
+            }
+            statement.execute("UPDATE sensor_data SET soil_status='calibrated' WHERE id=501");
+            try(var rows=statement.executeQuery("SELECT soil_status FROM sensor_data WHERE id=501")) {
+                assertTrue(rows.next()); assertEquals("calibrated",rows.getString(1));
+            }
         }
     }
     @Test void explicitBaselinePreservesExistingDataAndSequence() throws Exception {

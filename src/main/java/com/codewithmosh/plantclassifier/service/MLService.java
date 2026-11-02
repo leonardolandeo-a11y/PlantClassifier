@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 @Service
 public class MLService {
     private static final java.util.Set<String> LABELS = java.util.Set.of(
-            "algodón", "arroz", "café", "coco", "frijol chino", "frijol de palo", "frijol moth", "frijol rojo", "frijol urad", "garbanzo", "granada", "lenteja", "mango", "manzana", "maíz", "melón", "naranja", "papaya", "plátano", "sandía", "uva", "yute");
+            "frijol", "tomate", "sandía", "melón", "lechuga");
     private static final Logger log = LoggerFactory.getLogger(MLService.class);
     private final String python;
     private final String script;
@@ -50,8 +50,10 @@ public class MLService {
         if (left <= 0) throw new TimeoutException();
         return left;
     }
-    public String predict(double temperature, double humidity, double ph) {
-        if (!Double.isFinite(temperature) || !Double.isFinite(humidity) || !Double.isFinite(ph)) {
+    public String predict(double temperature, double humidity, double ph, double soilMoisture) {
+        if (!Double.isFinite(temperature) || !Double.isFinite(humidity) || !Double.isFinite(ph)
+                || !Double.isFinite(soilMoisture) || temperature < 0 || temperature > 50
+                || humidity < 0 || humidity > 100 || ph < 0 || ph > 14 || soilMoisture < 0 || soilMoisture > 100) {
             throw new SystemFailure(500, "ml-input", "Invalid prediction input");
         }
         if (!capacity.tryAcquire()) throw new SystemFailure(503, "ml-busy", "Prediction capacity is busy");
@@ -61,7 +63,7 @@ public class MLService {
         long deadline = System.nanoTime() + timeout.toNanos();
         try {
             process = new ProcessBuilder(python, script, Double.toString(temperature), Double.toString(humidity),
-                    Double.toString(ph)).directory(directory.toFile()).start();
+                    Double.toString(ph), Double.toString(soilMoisture)).directory(directory.toFile()).start();
             process.getOutputStream().close();
             final Process running = process;
             stdout = new FutureTask<>(() -> drain(running.getInputStream()));
@@ -71,6 +73,10 @@ public class MLService {
             if (!process.waitFor(remaining(deadline), TimeUnit.NANOSECONDS)) throw new TimeoutException();
             Output out = stdout.get(remaining(deadline), TimeUnit.NANOSECONDS);
             Output err = stderr.get(remaining(deadline), TimeUnit.NANOSECONDS);
+            if (process.exitValue() == 2 && out.bytes().length == 0 && !out.overflow() && !err.overflow()
+                    && new String(err.bytes(), StandardCharsets.UTF_8).strip().equals("Outside model training domain")) {
+                throw new SystemFailure(422, "ml-out-of-domain", "Measurements outside model training domain");
+            }
             if (process.exitValue() != 0) {
                 log.warn("ML exited with code {}; stderr bytes retained={}, truncated={}",
                         process.exitValue(), err.bytes().length, err.overflow());

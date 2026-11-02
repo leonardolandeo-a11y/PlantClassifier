@@ -67,3 +67,5 @@ Thumbs.db
 # Local firmware credentials
 ESP32/**/wifi_config.h
 MLClassification/model.candidate.pkl
+
+frontend/dist/

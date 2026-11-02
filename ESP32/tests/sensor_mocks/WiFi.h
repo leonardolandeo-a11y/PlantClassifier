@@ -13,7 +13,7 @@ inline int analogRead(int pin) { assert((pin==34 || pin==35)); ++adcCalls; retur
 inline void analogReadResolution(int bits) { assert(bits==12); }
 inline void analogSetPinAttenuation(int pin,int attenuation) { assert((pin==34 || pin==35) && attenuation==ADC_11db); }
 inline void pinMode(int pin,int mode) { assert((pin==34 || pin==35) && mode==INPUT); }
-struct MockSerial { void begin(int) {} template<class T> void print(T) {} template<class T> void println(T) {} };
+struct MockSerial { template<class... Args> void printf(const char*, Args...) {} void println() {} void begin(int) {} template<class T> void print(T) {} template<class T> void println(T) {} };
 inline MockSerial Serial;
 struct MockIP { String toString() { return "127.0.0.1"; } };
 struct MockWiFi {

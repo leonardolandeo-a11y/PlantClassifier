@@ -22,6 +22,15 @@ def inside():
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     sensor = make_server("127.0.0.1", 18081, os.environ["DEVICE_TOKEN"], "sensor")
+    # Test-only device fixtures, retaining the simulator's authentication and real HTTP path.
+    # No configurable override is exposed by the production simulator or firmware.
+    fixture = {}
+    original_reply = sensor.RequestHandlerClass.reply
+    def fixture_reply(handler, code, data):
+        if handler.path == '/capture' and code == 200:
+            data = dict(data, **fixture)
+        return original_reply(handler, code, data)
+    sensor.RequestHandlerClass.reply = fixture_reply
     threading.Thread(target=sensor.serve_forever, daemon=True).start()
     cookies = http.cookiejar.CookieJar()
     client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
@@ -46,7 +55,7 @@ def inside():
             raise RuntimeError("Application did not start")
         with client.open(base + "/", timeout=10) as response:
             dashboard = response.read()
-            assert response.status == 200 and b'id="CaptureData"' in dashboard
+            assert response.status == 200 and b'id="root"' in dashboard and b'/assets/' in dashboard
             assert b'id="SignIn"' not in dashboard
         for path in ["/movement", "/movement/session", "/sensors/capture"]:
             try:
@@ -66,12 +75,52 @@ def inside():
             assert capture["predictionStatus"] == "SUCCEEDED", capture["predictionStatus"]
             assert capture["capturedAt"] and capture["simulated"] is True
             assert capture["temperature"] == 25 and capture["prediction"]
+        assert capture["predictionModel"] == "synthetic-five-crops-v2"
+        assert capture["prediction"] in ["frijol", "tomate", "sandía", "melón", "lechuga"]
         assert capture["phSource"] == "software"
         assert capture["soilMoisture"] == 45 and capture["humidity"] == 60
         assert capture["soilMoistureSource"] == "software"
         latest = get("/sensors")
         assert latest["soilMoisture"] == 45
         assert latest["id"] == capture["id"] and latest["prediction"] == capture["prediction"]
+        # Four precise values travel sensor HTTP -> Spring -> Python -> PostgreSQL.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('active_predict', '/app/MLClassification/predict.py')
+        sys.path.insert(0, '/app/MLClassification')
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        previous_id = capture['id']
+        for soil in [25.25, 58.75, 85.25]:
+            fixture.update(temperature=26.7,humidity=68.4,ph=6.5,soilMoisture=soil,soilStatus='calibrated')
+            with post('/sensors/capture', token=csrf) as response: data=json.load(response)
+            assert data['id'] > previous_id and data['soilMoisture'] == soil
+            assert data['prediction'] == module.predict([26.7,68.4,6.5,soil])
+            assert data['predictionStatus'] == 'SUCCEEDED'
+            latest = get('/sensors')
+            assert latest == data, {k:(data.get(k),latest.get(k)) for k in data if data.get(k)!=latest.get(k)}
+            previous_id = data['id']
+        for ph,soil,status,expected in [(9.1,58,'calibrated','OUT_OF_DOMAIN'),
+                                       (6.5,0,'calibrated','OUT_OF_DOMAIN'),
+                                       (6.5,100,'calibrated','OUT_OF_DOMAIN'),
+                                       (6.5,None,'invalid','PENDING'),
+                                       (6.5,58,'calibration-pending','PENDING')]:
+            fixture.update(ph=ph,soilMoisture=soil,soilStatus=status)
+            with post('/sensors/capture', token=csrf) as response: data=json.load(response)
+            assert data['id'] > previous_id and data['prediction'] is None
+            assert data['predictionStatus'] == expected
+            assert data['ph'] == ph and data['soilMoisture'] == soil
+            latest = get('/sensors')
+            assert latest == data, {k:(data.get(k),latest.get(k)) for k in data if data.get(k)!=latest.get(k)}
+            if expected == 'OUT_OF_DOMAIN':
+                assert data['predictionModel'] == 'synthetic-five-crops-v2'
+                assert data['predictionError'] == 'ml-out-of-domain'
+            previous_id = data['id']
+        fixture.update(soilMoisture=101,soilStatus='calibrated')
+        try:
+            post('/sensors/capture',token=csrf)
+            raise AssertionError('Invalid soil accepted')
+        except urllib.error.HTTPError as error: assert error.code == 502
+        assert get('/sensors')['id'] == previous_id
+        print('PASS soil: fractional inputs, current predictions, domain abstention, missing/invalid readings, persisted model/status; no stale recommendation')
         print("Docker E2E passed: anonymous session/CSRF, missing-CSRF rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:
         sensor.simulator_stop.set()

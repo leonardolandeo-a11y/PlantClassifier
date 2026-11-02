@@ -30,24 +30,26 @@ class SensorDataServiceTest {
     }
     void reading(String json) { server.expect(requestTo("http://sensor.test/capture")).andRespond(withSuccess(json,MediaType.APPLICATION_JSON)); }
     @Test void capturePreservesValuesAndReceptionTimestamp() {
-        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true}");
-        when(ml.predict(20,50,7)).thenReturn("arroz"); Instant before=Instant.now();
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}");
+        when(ml.predict(20,50,7,45)).thenReturn("frijol"); Instant before=Instant.now();
         var result=service.captureData();
-        assertEquals(7,result.ph()); assertEquals("arroz",result.prediction()); assertEquals("SUCCEEDED",result.predictionStatus());
-        assertFalse(result.capturedAt().isBefore(before)); verify(repository,times(2)).saveAndFlush(any()); server.verify();
+        assertEquals(7,result.ph()); assertEquals("frijol",result.prediction()); assertEquals("SUCCEEDED",result.predictionStatus());
+        assertFalse(result.capturedAt().isBefore(before.truncatedTo(java.time.temporal.ChronoUnit.MICROS)));
+        assertEquals(0,result.capturedAt().getNano()%1000);
+        verify(repository,times(2)).saveAndFlush(any()); server.verify();
     }
     @Test void mixedProvenancePersistsAndKeepsModelFeatureOrder() {
         reading("""
                 {"ph":6.5,"temperature":25,"humidity":60,"simulated":false,
-                 "temperatureSource":"dht11","humiditySource":"dht11","phSource":"potentiometer"}
+                 "temperatureSource":"dht11","humiditySource":"dht11","phSource":"potentiometer","soilMoisture":45,"soilMoistureSource":"resistive-analog","soilStatus":"calibrated"}
                 """);
-        when(ml.predict(25,60,6.5)).thenReturn("arroz");
+        when(ml.predict(25,60,6.5,45)).thenReturn("frijol");
         var result=service.captureData();
         assertEquals("dht11",result.temperatureSource());
         assertEquals("dht11",result.humiditySource());
         assertEquals("potentiometer",result.phSource());
         assertTrue(result.simulated());
-        verify(ml).predict(25,60,6.5);
+        verify(ml).predict(25,60,6.5,45);
         verify(repository,times(2)).saveAndFlush(argThat(row -> "potentiometer".equals(row.getPhSource())));
     }
     @Test void badSourceAndSensorFailureCannotBecomeSyntheticMeasurements() {
@@ -61,17 +63,17 @@ class SensorDataServiceTest {
         verifyNoInteractions(repository,ml);
     }
     @Test void invalidAndMissingReadingsAreNotPersisted() {
-        for(String json:new String[]{"", "{}", "{\"ph\":15,\"temperature\":20,\"humidity\":50,\"simulated\":true}",
-                "{\"ph\":7,\"temperature\":100,\"humidity\":50,\"simulated\":true}",
-                "{\"ph\":7,\"temperature\":20,\"humidity\":101,\"simulated\":true}"}) {
+        for(String json:new String[]{"", "{}", "{\"ph\":15,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}",
+                "{\"ph\":7,\"temperature\":100,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}",
+                "{\"ph\":7,\"temperature\":20,\"humidity\":101,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}"}) {
             server.reset(); reading(json);
             assertThrows(SystemFailure.class,()->service.captureData());
         }
         verifyNoInteractions(repository,ml);
     }
     @Test void mlFailureReturnsSavedPartialResult() {
-        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true}");
-        when(ml.predict(20,50,7)).thenThrow(new SystemFailure(504,"ml-timeout","Timed out"));
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}");
+        when(ml.predict(20,50,7,45)).thenThrow(new SystemFailure(504,"ml-timeout","Timed out"));
         var result=service.captureData();
         assertEquals("FAILED",result.predictionStatus()); assertEquals("ml-timeout",result.predictionError());
         assertNull(result.prediction()); verify(repository,times(2)).saveAndFlush(any());
@@ -81,19 +83,30 @@ class SensorDataServiceTest {
             {"ph":7,"temperature":20,"humidity":60,"simulated":false,
              "soilMoisture":45,"soilMoistureSource":"software"}
             """);
-        when(ml.predict(20,60,7)).thenThrow(new SystemFailure(504,"ml-timeout","Timed out"));
+        when(ml.predict(20,60,7,45)).thenThrow(new SystemFailure(504,"ml-timeout","Timed out"));
         var result=service.captureData();
         assertEquals(45,result.soilMoisture()); assertEquals(60,result.humidity());
         assertEquals("software",result.soilMoistureSource()); assertTrue(result.simulated());
         assertEquals("FAILED",result.predictionStatus());
         verify(repository,times(2)).saveAndFlush(argThat(row -> row.getSoilMoisture()==45));
     }
+    @Test void outOfDomainMeasurementIsPreservedWithoutACrop() {
+        reading("{\"ph\":9.1,\"temperature\":26.7,\"humidity\":68.4,\"simulated\":true,\"soilMoisture\":58,\"soilMoistureSource\":\"resistive-analog\",\"soilStatus\":\"calibrated\"}");
+        when(ml.predict(26.7,68.4,9.1,58)).thenThrow(new SystemFailure(422,"ml-out-of-domain","Outside training domain"));
+        var result=service.captureData();
+        assertEquals("OUT_OF_DOMAIN",result.predictionStatus()); assertNull(result.prediction());
+        assertEquals("ml-out-of-domain",result.predictionError());
+        assertEquals("synthetic-five-crops-v2",result.predictionModel());
+        assertEquals(58,result.soilMoisture()); assertEquals(9.1,result.ph());
+        verify(repository,times(2)).saveAndFlush(any());
+    }
     @Test void pendingCalibrationDoesNotBlockOtherMeasurements() {
         reading("""
             {"ph":7,"temperature":20,"humidity":60,"simulated":false,
              "soilMoisture":null,"soilMoistureSource":"resistive-analog"}
             """);
-        assertNull(service.captureData().soilMoisture()); verify(ml).predict(20,60,7);
+        var result=service.captureData(); assertNull(result.soilMoisture());
+        assertEquals("PENDING",result.predictionStatus()); verifyNoInteractions(ml);
     }
     @Test void invalidSoilIsRejected() {
         for(String value:new String[]{"-1","101","\"45\"","1e9999"}) {
@@ -103,21 +116,41 @@ class SensorDataServiceTest {
         }
         verifyNoInteractions(repository,ml);
     }
+    @Test void soilStatusSurvivesCaptureAndLatestIncludingLegacyAndUnknown() {
+        for (String status : new String[]{"calibrated", "invalid", "calibration-pending", "future-state", null}) {
+            server.reset();
+            String statusJson = status == null ? "" : ",\"soilStatus\":\""+status+"\"";
+            reading("{\"ph\":7,\"temperature\":20,\"humidity\":60,\"simulated\":true"+statusJson+"}");
+            assertEquals(status, service.captureData().soilStatus());
+            var saved = new SensorData(); saved.setSoilStatus(status);
+            when(repository.findTopByOrderByIdDesc()).thenReturn(Optional.of(saved));
+            assertEquals(status, service.getLatestSensorData().orElseThrow().soilStatus());
+        }
+        verify(repository,times(1)).saveAndFlush(argThat(row -> "invalid".equals(row.getSoilStatus())));
+    }
+    @Test void invalidOrPendingStatusBlocksPredictionEvenWithNumber() {
+        for(String status:new String[]{"invalid","calibration-pending"}) {
+            server.reset();
+            reading("{\"ph\":7,\"temperature\":20,\"humidity\":60,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\",\"soilStatus\":\""+status+"\"}");
+            var result=service.captureData(); assertEquals("PENDING",result.predictionStatus()); assertNull(result.prediction());
+        }
+        verifyNoInteractions(ml); verify(repository,times(2)).saveAndFlush(any());
+    }
     @Test void latestUsesOrderedSingleRowQueryAndHandlesEmptyDatabase() {
         when(repository.findTopByOrderByIdDesc()).thenReturn(Optional.empty());
         assertTrue(service.getLatestSensorData().isEmpty());
         verify(repository).findTopByOrderByIdDesc(); verify(repository,never()).findAll();
     }
     @Test void malformedJsonNumericStringsAndNonFiniteValuesAreRejected() {
-        for(String json:new String[]{"{", "{\"ph\":\"7\",\"temperature\":20,\"humidity\":50,\"simulated\":true}",
-                "{\"ph\":7,\"temperature\":1e9999,\"humidity\":50,\"simulated\":true}",
+        for(String json:new String[]{"{", "{\"ph\":\"7\",\"temperature\":20,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}",
+                "{\"ph\":7,\"temperature\":1e9999,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}",
                 "{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":\"true\"}"}) {
             server.reset(); reading(json); assertThrows(SystemFailure.class,()->service.captureData());
         }
         verifyNoInteractions(repository,ml);
     }
     @Test void persistenceFailurePreventsPrediction() {
-        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true}");
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"soilMoisture\":45,\"soilMoistureSource\":\"software\"}");
         when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("test"));
         assertThrows(org.springframework.dao.DataAccessException.class,()->service.captureData());
         verifyNoInteractions(ml);
