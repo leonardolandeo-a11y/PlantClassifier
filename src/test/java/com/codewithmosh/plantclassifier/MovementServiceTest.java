@@ -53,6 +53,25 @@ class MovementServiceTest {
         assertThrows(SystemFailure.class,()->service.sendCommand(new MovementRequestDTO("LEFT",150,id,2L),"other"));
         server.verify();
     }
+    @Test void repeatedBackwardKeepsRequestedPwmAndSequence() {
+        acquire();
+        for (long sequence=1; sequence<=20; sequence++) {
+            expectCommand("BACKWARD",sequence);
+            var ack=service.sendCommand(new MovementRequestDTO("BACKWARD",150,id,sequence),"owner");
+            assertEquals(150,ack.speed()); assertEquals(sequence,ack.sequence());
+            server.verify(); server.reset();
+        }
+    }
+    @Test void reversalRejectionExplainsSafeRecovery() {
+        acquire();
+        server.expect(requestTo("http://robot.test/movement")).andRespond(
+            withStatus(org.springframework.http.HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":\"Reversal interlock: release keys\"}"));
+        var error=assertThrows(SystemFailure.class,()->service.sendCommand(
+            new MovementRequestDTO("BACKWARD",150,id,1L),"owner"));
+        assertEquals(409,error.status()); assertTrue(error.getMessage().contains("500 ms"));
+        server.verify();
+    }
     @Test void rejectsEmptyAcknowledgement() {
         acquire(); server.expect(requestTo("http://robot.test/movement")).andRespond(withSuccess());
         assertEquals(502,assertThrows(SystemFailure.class,()->service.sendCommand(new MovementRequestDTO("STOP",0,id,1L),"owner")).status());

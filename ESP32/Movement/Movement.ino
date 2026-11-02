@@ -44,6 +44,14 @@ void sendStatus() {
   doc["ip"] = WiFi.localIP().toString();
   doc["commandedMoving"] = driveDirection != 0;
   doc["speed"] = currentSpeed;
+  doc["logicalDirection"] = driveDirection;
+  doc["motorPolarity"] = MOTOR_POLARITY;
+  doc["watchdogStops"] = watchdogStops;
+  doc["sessionExpirations"] = sessionExpirations;
+  doc["wifiStops"] = wifiStops;
+  doc["reversalRejections"] = reversalRejections;
+  doc["uptimeMs"] = millis();
+  doc["commandAgeMs"] = uint32_t(millis() - lastCommandTime);
   doc["steeringAngle"] = currentAngle;
   doc["servoAttached"] = servoOK;
   doc["pwmAttached"] = pwmOK;

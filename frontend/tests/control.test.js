@@ -1,5 +1,5 @@
 // @vitest-environment node
-import {test} from 'vitest';
+import {test, vi} from 'vitest';
 import assert from 'node:assert/strict';
 import {KeyboardState, MovementControl, ControlRejected} from '../src/movement/controller.ts';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,5));
@@ -127,4 +127,35 @@ test('new direction bypasses scheduled heartbeat, STOP cancels it',async()=>{
     t.control.set('LEFT');await tick();assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT']);
     t.control.stop();await tick();await delay(300);
     assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT','STOP']);
+});
+
+for (const command of ['FORWARD', 'BACKWARD']) {
+    test(`${command}: 200 ms RTT keeps 250 ms cadence without overlapping requests`, async () => {
+        vi.useFakeTimers();
+        const times=[]; let pending=0, maximum=0;
+        const t=setup({send:async r=>{
+            times.push(performance.now()); maximum=Math.max(maximum,++pending);
+            await new Promise(resolve=>setTimeout(resolve,200)); --pending; return ack(r);
+        }});
+        try {
+            t.control.set(command);
+            await vi.advanceTimersByTimeAsync(1200);
+            assert.deepEqual(times,[0,250,500,750,1000]);
+            assert.equal(maximum,1);
+            assert.equal(t.control.diagnostics.movementMs,200);
+            assert.equal(t.control.diagnostics.heartbeatGapMs,250);
+            t.control.stop(); await vi.advanceTimersByTimeAsync(200);
+            assert.equal(t.control.diagnostics.stopMs,200);
+        } finally { t.control.dispose(); vi.useRealTimers(); }
+    });
+}
+test('late heartbeat response never creates a catch-up burst or resumes after STOP', async()=>{
+    vi.useFakeTimers(); const pending=deferred(),calls=[];
+    const t=setup({send:r=>{calls.push(r);return r.command==='STOP'?Promise.resolve(ack(r)):pending.promise;}});
+    try {
+        t.control.set('BACKWARD'); await vi.advanceTimersByTimeAsync(1100);
+        assert.equal(calls.length,1); t.control.stop();
+        pending.resolve(ack(calls[0])); await vi.advanceTimersByTimeAsync(2000);
+        assert.deepEqual(calls.map(r=>r.command),['BACKWARD','STOP']);
+    } finally { t.control.dispose(); vi.useRealTimers(); }
 });

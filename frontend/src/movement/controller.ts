@@ -29,6 +29,10 @@ export class ControlRejected extends Error {}
 export type ControlState = "IDLE" | "ACQUIRING" | "ACTIVE" | "STOPPING" | "ERROR";
 
 export class MovementControl {
+    // Monotonic communication timings, not measured wheel speed. No per-heartbeat logging.
+    readonly diagnostics = { acquisitionMs: 0, movementMs: 0, stopMs: 0,
+        heartbeatGapMs: 0, maxHeartbeatGapMs: 0, failures: 0 };
+    private lastSentAt: number | null = null;
     private disposed = false;
     private session: string | null = null;
     private sequence = 0;
@@ -67,9 +71,12 @@ export class MovementControl {
         this.fault = null;
         this.acquiring = true;
         const generation = this.generation;
+        const started = performance.now();
         this.status("Connecting to ESP32…");
         try {
             const session = await this.transport.acquire();
+            this.diagnostics.acquisitionMs = performance.now() - started;
+            this.lastSentAt = null;
             if (!/^[0-9a-f]{32}$/.test(session.sessionId)) throw new Error("Invalid control session");
             // A released key can never use this epoch, even if another key was pressed meanwhile.
             this.session = session.sessionId;
@@ -111,7 +118,13 @@ export class MovementControl {
         } finally { this.stopping = false; this.advance(); }
     }
     private async send(request: MovementRequest): Promise<Acknowledgement> {
-        const ack = await this.transport.send(request);
+        const started = performance.now();
+        let ack: Acknowledgement;
+        try { ack = await this.transport.send(request); }
+        finally {
+            if (request.command === "STOP") this.diagnostics.stopMs = performance.now() - started;
+            else this.diagnostics.movementMs = performance.now() - started;
+        }
         if (!ack || ack.status !== "OK" || ack.sessionId !== request.sessionId ||
             ack.sequence !== request.sequence || ack.command !== request.command ||
             ack.speed !== request.speed || typeof ack.simulated !== "boolean")
@@ -122,6 +135,12 @@ export class MovementControl {
         if (this.inFlight || !this.session || this.desired === "STOP") return;
         const generation = this.generation;
         const request: MovementRequest = {command: this.desired, speed: this.desired === "FORWARD" || this.desired === "BACKWARD" ? 150 : 0, sessionId: this.session, sequence: ++this.sequence};
+        const started = performance.now();
+        if (this.lastSentAt !== null) {
+            this.diagnostics.heartbeatGapMs = started - this.lastSentAt;
+            this.diagnostics.maxHeartbeatGapMs = Math.max(this.diagnostics.maxHeartbeatGapMs, this.diagnostics.heartbeatGapMs);
+        }
+        this.lastSentAt = started;
         this.inFlight = request;
         try {
             const ack = await this.send(request);
@@ -137,12 +156,14 @@ export class MovementControl {
                 this.inFlight = null;
                 if (generation === this.generation && this.session) {
                     if (this.desired !== request.command) this.advance();
-                    else this.timer = setTimeout(() => void this.pump(), 250);
+                    // Target start-to-start cadence, with one request in flight and no catch-up queue.
+                    else this.timer = setTimeout(() => void this.pump(), Math.max(0, 250 - (performance.now() - started)));
                 }
             }
         }
     }
     private fail(error: unknown): void {
+        this.diagnostics.failures++;
         this.fault = `Connection lost / control unavailable: ${message(error)}. Release keys and press again.`;
         this.stop();
         this.failed();

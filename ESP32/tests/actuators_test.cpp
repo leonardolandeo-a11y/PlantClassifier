@@ -49,7 +49,7 @@ int main() {
   assert(pwmOK && servoOK && pins[STBY]==0 && duty==0);
   for(auto e:writes) assert(!(e.pin==STBY && e.value==HIGH));
   writes.clear(); assert(motorDrive(1,150));
-  assert(pins[AIN1]==HIGH && pins[AIN2]==LOW && duty==150 && pins[STBY]==HIGH);
+  assert(pins[AIN1]==LOW && pins[AIN2]==HIGH && duty==150 && pins[STBY]==HIGH);
   assert(writes.back().pin==STBY && writes.back().value==HIGH);
   assert(motorDrive(1,999) && duty==255);
   now=10; writes.clear(); assert(!motorDrive(-1,150));
@@ -57,7 +57,7 @@ int main() {
   assert(duty==0 && pins[STBY]==LOW && driveDirection==0);
   now=509; assert(!motorDrive(-1,150));
   now=510; assert(motorDrive(-1,1));
-  assert(pins[AIN1]==LOW && pins[AIN2]==HIGH && duty==1);
+  assert(pins[AIN1]==HIGH && pins[AIN2]==LOW && duty==1);
   assert(motorDrive(-1,-1) && duty==0 && pins[STBY]==LOW);
   assert(!motorDrive(1,100)); // STOP cannot bypass coast interval.
   now=1010; assert(motorDrive(1,100));
@@ -77,7 +77,25 @@ int main() {
   reset(); setupHardware(); assert(motorDrive(1,50)); writeOK=false; motorStop();
   assert(!pwmOK && pins[STBY]==LOW && currentSpeed==0);
 #endif
-  reset(); setupHardware(); gate.begin(0);
+  // Sustained commands keep PWM and bridge enabled; no software STOP pulses.
+  for (int direction : {1, -1}) {
+    reset(); setupHardware(); gate.begin(0); lastCommandTime=0;
+    for (uint32_t sequence=1; sequence<=40; ++sequence) {
+      now=(sequence-1)*250;
+      checkMovementSafety(true,now);
+      assert(gate.accept(sequence,now+1000,now,false));
+      writes.clear(); assert(motorDrive(direction,150)); lastCommandTime=now;
+      assert(currentSpeed==150 && driveDirection==direction);
+#if !SIMULATION_MODE
+      assert(duty==150 && pins[STBY]==HIGH);
+      if(sequence>1) for(auto e:writes) assert(!(e.pin==STBY && e.value==LOW));
+#endif
+    }
+    checkMovementSafety(false,now+1); // Includes Wi-Fi loss during BACKWARD.
+    assert(driveDirection==0 && !gate.active);
+    checkMovementSafety(true,now+2); assert(driveDirection==0);
+  }
+  reset(); setupHardware(); gate.begin(0); lastCommandTime=0;
   assert(gate.accept(1,1000,0,false)); assert(motorDrive(1,30));
   checkMovementSafety(true,1500); assert(driveDirection==1);
   checkMovementSafety(true,1501); assert(driveDirection==0 && !gate.active);

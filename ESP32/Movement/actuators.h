@@ -1,6 +1,7 @@
 #pragma once
 // Production actuator functions, exercised on the host with mocked Arduino I/O.
 #include "hardware_config.h"
+#include "motor_polarity.h"
 #if !SIMULATION_MODE
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Movement hardware pin/timer mapping requires a classic ESP32"
@@ -15,6 +16,7 @@ int currentSpeed = 0;
 int driveDirection = 0;
 int lastPoweredDirection = 0;
 uint32_t motorStoppedAt = 0;
+uint32_t reversalRejections = 0;
 unsigned long lastCommandTime = 0;
 
 void motorStop() {
@@ -47,11 +49,18 @@ bool motorDrive(int direction, int speed) {
     motorStop();
     // Reject, never delay or queue a restart. The caller invalidates the session.
     // Also applies after STOP, steering commands and acquisition of a new session.
-    if (!pwmOK || uint32_t(millis() - motorStoppedAt) < REVERSAL_DEADTIME_MS) return false;
+    if (!pwmOK || uint32_t(millis() - motorStoppedAt) < REVERSAL_DEADTIME_MS) {
+      ++reversalRejections;
+      return false;
+    }
   }
-  digitalWrite(STBY, LOW);
-  digitalWrite(AIN1, direction > 0 ? HIGH : LOW);
-  digitalWrite(AIN2, direction < 0 ? HIGH : LOW);
+  // A heartbeat must not pulse STBY or rewrite direction while already powered.
+  if (driveDirection != direction) {
+    digitalWrite(STBY, LOW);
+    const int electricalDirection = direction * MOTOR_POLARITY;
+    digitalWrite(AIN1, electricalDirection > 0 ? HIGH : LOW);
+    digitalWrite(AIN2, electricalDirection < 0 ? HIGH : LOW);
+  }
   lastPWMWriteOK = ledcWrite(PWMA, speed);
   if (!lastPWMWriteOK) {
     pwmOK = false;

@@ -10,8 +10,25 @@ final class DeviceResponse {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private DeviceResponse() {}
     static JsonNode read(RestClient.RequestHeadersSpec<?> request) {
+        return read(request, false);
+    }
+    static JsonNode readMovement(RestClient.RequestHeadersSpec<?> request) {
+        return read(request, true);
+    }
+    private static JsonNode read(RestClient.RequestHeadersSpec<?> request, boolean movement) {
         return request.exchange((req, response) -> {
             int status = response.getStatusCode().value();
+            if (movement && status == 409) {
+                byte[] body = response.getBody().readNBytes(8193);
+                if (body.length <= 8192) {
+                    try {
+                        var error = JSON.readTree(body);
+                        if (error != null && error.path("error").asString("").startsWith("Reversal interlock:"))
+                            throw new SystemFailure(409, "reversal-interlock",
+                                    "Cambio de sentido rechazado: suelta las teclas, espera al menos 500 ms y a que el motor se detenga, y vuelve a pulsar.");
+                    } catch (tools.jackson.core.JacksonException ignored) { /* Generic rejection below. */ }
+                }
+            }
             if (status == 409) throw new SystemFailure(409,"device-rejected","Device rejected stale or expired control");
             if (!response.getStatusCode().is2xxSuccessful())
                 throw new SystemFailure(502,"device-communication","Device rejected the request");

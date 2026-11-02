@@ -45,5 +45,5 @@ export function useMovement(transport: Transport = movementApi) {
     const r = runtime.current;
     if (r) { r.held.clear(); r.control.stop(); r.publish(); }
   }, []);
-  return { ...snapshot, press, release, stop };
+  return { ...snapshot, diagnostics: runtime.current?.control.diagnostics, press, release, stop };
 }

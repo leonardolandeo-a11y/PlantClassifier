@@ -12,7 +12,22 @@ import java.util.Objects;
 public class MovementService {
     public record ControlSession(String sessionId, long deviceTimeMs) {}
     private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(MovementService.class);
     private final RestClient client;
+
+    // Opt-in DEBUG timings exclude tokens, URLs and session identifiers.
+    private tools.jackson.databind.JsonNode timedRead(String operation, RestClient.RequestHeadersSpec<?> request) {
+        long started = System.nanoTime();
+        boolean accepted = false;
+        try {
+            var result = DeviceResponse.readMovement(request);
+            accepted = true;
+            return result;
+        } finally {
+            LOG.debug("Movement HTTP operation={} responseOk={} elapsedMs={}", operation, accepted,
+                    (System.nanoTime() - started) / 1_000_000.0);
+        }
+    }
     private ControlSession active;
     private String owner;
     private long originNanos;
@@ -24,7 +39,7 @@ public class MovementService {
     // Session acquisition is serialized. The device stops and rotates its epoch on every acquisition.
     public synchronized ControlSession acquire(String owner) {
         active = null;
-        var json = DeviceResponse.read(client.post().uri("/control-session"));
+        var json = timedRead("acquire", client.post().uri("/control-session"));
         var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"));
         if (!session.sessionId().matches("[0-9a-f]{32}")
                 || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL) {
@@ -78,7 +93,7 @@ public class MovementService {
                 "command", request.command(), "speed", request.speed(), "sessionId", request.sessionId(),
                 "sequence", request.sequence(), "deadlineMs", deadline));
         // ESP32 WebServer expects a bounded request body with Content-Length, not chunked streaming.
-        var json = DeviceResponse.read(client.post().uri("/movement")
+        var json = timedRead(request.command(), client.post().uri("/movement")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .contentLength(payload.length).body(payload));
         long speed = DeviceResponse.integer(json, "speed");
