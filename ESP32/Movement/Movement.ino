@@ -129,6 +129,7 @@ void setup() {
   robotStop();
 
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // Disable Wi-Fi modem sleep
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("[WIFI] Connecting");
