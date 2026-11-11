@@ -34,3 +34,8 @@ docs/
 **/wifi_config.h
 
 frontend/dist/
+
+# Never transmit technical MQTT secrets in a build context.
+docker/mosquitto/secrets/
+**/mqtt_config.h
+.venv-diagnostics/

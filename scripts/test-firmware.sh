@@ -37,7 +37,7 @@ if [ ! -f "$json_include/ArduinoJson.h" ]; then
 fi
 work=$(mktemp -d /tmp/plant-sensor-test.XXXXXX)
 trap 'rm -f "$binary"; rm -rf "$work"' EXIT
-cp ESP32/PlantClassifier/PlantClassifier.ino ESP32/PlantClassifier/sensor_*.h "$work/"
+cp ESP32/PlantClassifier/PlantClassifier.ino ESP32/PlantClassifier/sensor_*.h ESP32/PlantClassifier/transport.h "$work/"
 cat > "$work/wifi_config.h" <<'CONFIG'
 #pragma once
 const char* WIFI_SSID="mock";
@@ -52,11 +52,25 @@ g++ -std=c++17 -Wall -Wextra -Werror -DCONFIG_IDF_TARGET_ESP32 \
 mkdir -p "$work/Movement"
 cp ESP32/Movement/Movement.ino "$work/Movement/"
 for header in ESP32/Movement/*.h; do
-  [ "$(basename "$header")" = wifi_config.h ] || cp "$header" "$work/Movement/"
+  [[ "$(basename "$header")" = wifi_config.h || "$(basename "$header")" = mqtt_config.h ]] || cp "$header" "$work/Movement/"
 done
 cp "$work/wifi_config.h" "$work/Movement/wifi_config.h"
 for mode in 0 1; do
   g++ -std=c++17 -Wall -Wextra -Werror -DCONFIG_IDF_TARGET_ESP32 -DSIMULATION_MODE=$mode \
     -IESP32/tests/movement_mocks -I"$work/Movement" -I"$json_include" ESP32/tests/movement_http_test.cpp -o "$work/movement-test"
   "$work/movement-test"
+done
+
+# MQTT dispatch uses the same production handlers, bounded queues and priority path.
+# Mock scheduler never starts a network task; all GPIO/servo writes remain mocked.
+for sketch in Movement PlantClassifier; do
+  test_dir="$work"
+  mocks=ESP32/tests/sensor_mocks
+  source=ESP32/tests/sensor_mqtt_test.cpp
+  if [[ "$sketch" == Movement ]]; then test_dir="$work/Movement"; mocks=ESP32/tests/movement_mocks; source=ESP32/tests/movement_mqtt_test.cpp; fi
+  cp "ESP32/$sketch/mqtt_config.h.example" "$test_dir/mqtt_config.h"
+  g++ -std=c++17 -Wall -Wextra -Werror -DCONFIG_IDF_TARGET_ESP32 -DSIMULATION_MODE=0 \
+    -I"$mocks" -IESP32/tests/mqtt_mocks -IESP32/tests -IESP32/libraries/PlantMqtt/src \
+    -I"$test_dir" -I"$json_include" "$source" -o "$work/mqtt-test"
+  "$work/mqtt-test"
 done

@@ -20,6 +20,7 @@
 
 
 WebServer server(80);
+#include "transport.h"
 #include "control_protocol.h"
 
 // ============================================================
@@ -85,7 +86,7 @@ void sendStatus() {
   // Estos campos representan estados internos, NO movimiento medido.
   String body;
   serializeJson(doc, body);
-  server.send(200, "application/json", body);
+  mqttReply(200, "application/json", body);
 }
 
 void handleMovement() {
@@ -137,7 +138,7 @@ void handleMovement() {
 #endif
   String body;
   serializeJson(result, body);
-  server.send(200, "application/json", body);
+  mqttReply(200, "application/json", body);
 }
 
 // ============================================================
@@ -165,6 +166,7 @@ void setup() {
   server.on("/status", HTTP_GET, []() { if (authorized()) sendStatus(); });
   server.on("/movement", HTTP_POST, handleMovement);
   server.begin();
+  setupMqtt();
 
   if (WiFi.status() == WL_CONNECTED) Serial.println("[WIFI] Connected");
   Serial.print("[WIFI] IP: ");
@@ -173,11 +175,14 @@ void setup() {
 }
 
 void loop() {
+  checkMovementSafety(WiFi.status() == WL_CONNECTED, millis());
+  tickMqtt();
   static unsigned long lastReconnectAttempt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
     checkMovementSafety(true, millis()); // Expire before processing newly arrived requests.
-    server.handleClient();
+    // Slow HTTP diagnostic clients must not stall MQTT actuator watchdogs.
+    if (!MQTT_ENABLED || !gate.active) server.handleClient();
   } else {
     checkMovementSafety(false, millis());
     if (millis() - lastReconnectAttempt >= 5000) {
@@ -188,4 +193,12 @@ void loop() {
 
   checkMovementSafety(WiFi.status() == WL_CONNECTED, millis());
   delay(1);
+}
+
+void mqttStop() { robotStop(); gate.invalidate(); }
+void mqttDispatch(const String& method, const String& path) {
+  if (method == "POST" && path == "/control-session") acquireControl();
+  else if (method == "POST" && path == "/movement") handleMovement();
+  else if (method == "GET" && path == "/status") sendStatus();
+  else protocolError(404, "Unknown MQTT operation");
 }

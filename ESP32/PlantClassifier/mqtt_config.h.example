@@ -1,0 +1,9 @@
+#pragma once
+// Copy to mqtt_config.h (ignored by Git). Exclusive actuator mode; rebuild to roll back.
+#define MQTT_ENABLED 1
+// LAN address of the Ubuntu host, never the Docker service name.
+#define MQTT_HOST "REPLACE_WITH_UBUNTU_LAN_ADDRESS"
+#define MQTT_PORT 1883
+#define MQTT_CLIENT_ID "plant-sensor"
+#define MQTT_USERNAME "sensor"
+#define MQTT_PASSWORD "REPLACE_WITH_DEVICE_SPECIFIC_SECRET"

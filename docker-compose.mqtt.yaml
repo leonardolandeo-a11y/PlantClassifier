@@ -1,0 +1,29 @@
+# Explicit migration override. The base Compose retains HTTP rollback.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    ports:
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/mosquitto/acl:/mosquitto/config/acl:ro
+      - ./docker/mosquitto/healthcheck.sh:/mosquitto/config/healthcheck.sh:ro
+      - ./docker/mosquitto/secrets/passwords:/mosquitto/secrets/passwords:ro
+      - ./docker/mosquitto/secrets/health-password:/mosquitto/secrets/health-password:ro
+    healthcheck:
+      test: ["CMD", "sh", "/mosquitto/config/healthcheck.sh"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+  app:
+    environment:
+      DEVICE_TRANSPORT: mqtt
+      MQTT_URL: tcp://mosquitto:1883
+      MQTT_USERNAME: backend
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?Set backend MQTT_PASSWORD in a private env file}
+      MQTT_ACK_TIMEOUT: ${MQTT_ACK_TIMEOUT:-600ms}
+    depends_on:
+      mosquitto:
+        condition: service_healthy

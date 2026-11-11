@@ -13,6 +13,13 @@ import java.util.concurrent.Semaphore;
 
 @Service
 public class SensorDataService {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(SensorDataService.class);
+    private static <T> T timed(String metric, java.util.function.Supplier<T> action) {
+        long start = System.nanoTime();
+        try { return action.get(); }
+        finally { LOG.debug("metric={} elapsedMs={}", metric, (System.nanoTime()-start)/1_000_000.0); }
+    }
+    private SensorData save(SensorData data) { return timed("postgres-save", () -> repository.saveAndFlush(data)); }
     private final SensorDataRepository repository;
     private final MLService ml;
     private final RestClient client;
@@ -44,7 +51,7 @@ public class SensorDataService {
     public CaptureResponse captureData() {
         if (!capacity.tryAcquire()) throw new SystemFailure(503, "capture-busy", "Capture capacity is busy");
         try {
-            var json = DeviceResponse.read(client.get().uri("/capture"));
+            var json = timed("sensor-capture", () -> DeviceResponse.read(client.get().uri("/capture")));
             double ph = DeviceResponse.number(json, "ph");
             double temperature = DeviceResponse.number(json, "temperature");
             double humidity = DeviceResponse.number(json, "humidity");
@@ -53,10 +60,12 @@ public class SensorDataService {
                     || !inRange(temperature, minTemperature, maxTemperature)) {
                 throw new SystemFailure(502, "sensor-data", "Device returned incomplete or invalid sensor readings");
             }
+            long age = json.has("sampleAgeMs") ? DeviceResponse.integer(json, "sampleAgeMs") : 0;
+            if (age < 0 || age > 2000) throw new SystemFailure(409, "stale-sample", "Sensor sample is too old; release servo and capture again");
             SensorData data = new SensorData();
             data.setPh(ph); data.setTemperature(temperature); data.setHumidity(humidity);
             // PostgreSQL timestamps retain microseconds; return the same instant on capture and reload.
-            data.setCapturedAt(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS)); data.setSimulated(simulated);
+            data.setCapturedAt(Instant.now().minusMillis(age).truncatedTo(java.time.temporal.ChronoUnit.MICROS)); data.setSimulated(simulated);
             data.setTemperatureSource(source(json, "temperatureSource", "dht11"));
             data.setHumiditySource(source(json, "humiditySource", "dht11"));
             data.setPhSource(source(json, "phSource", "potentiometer", "calibrated-ph-probe"));
@@ -77,20 +86,21 @@ public class SensorDataService {
             if ("software".equals(data.getSoilMoistureSource())) data.setSimulated(true);
             data.setPredictionStatus("PENDING");
             // This commit is independent of prediction. Do not wrap this method in a database transaction.
-            data = repository.saveAndFlush(data);
+            data = save(data);
             if (data.getSoilMoisture() == null || (data.getSoilStatus() != null && !"calibrated".equals(data.getSoilStatus()))) {
                 return CaptureResponse.from(data); // Saved, awaiting a usable soil reading; never impute.
             }
             data.setPredictionModel("synthetic-five-crops-v2");
             try {
-                data.setPrediction(ml.predict(data.getTemperature(), data.getHumidity(), data.getPh(), data.getSoilMoisture()));
+                SensorData measurement = data;
+                data.setPrediction(timed("ml", () -> ml.predict(measurement.getTemperature(), measurement.getHumidity(), measurement.getPh(), measurement.getSoilMoisture())));
                 data.setPredictionStatus("SUCCEEDED");
             } catch (SystemFailure ex) {
                 data.setPredictionStatus("ml-out-of-domain".equals(ex.category()) ? "OUT_OF_DOMAIN" : "FAILED");
                 data.setPredictionError(ex.category());
             }
             // If this write fails, the first persisted measurement remains PENDING for troubleshooting.
-            return CaptureResponse.from(repository.saveAndFlush(data));
+            return CaptureResponse.from(save(data));
         } finally { capacity.release(); }
     }
 }

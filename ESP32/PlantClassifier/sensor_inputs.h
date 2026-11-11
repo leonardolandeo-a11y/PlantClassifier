@@ -23,7 +23,8 @@ bool readSensors(Dht& dht, Adc adc, SensorSample& sample) {
   long sum = 0;
   for (int i = 0; i < 8; ++i) {
     int rawValue = adc(PH_PIN);
-    sum += rawValue < 0 ? 0 : rawValue > PH_ADC_MAX ? PH_ADC_MAX : rawValue;
+    if (rawValue < 0 || rawValue > PH_ADC_MAX) return false;
+    sum += rawValue;
   }
   sample.ph = demoPH(int((sum + 4) / 8));
   long soilSum = 0;

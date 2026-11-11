@@ -8,6 +8,7 @@
 #error "Sensor GPIO34 ADC mapping requires a classic ESP32; verify your board"
 #endif
 WebServer server(80);
+#include "transport.h"
 #include "sensor_http.h"
 #include "sensor_servo.h"
 DHT dht(DHTPIN, DHTTYPE);
@@ -30,13 +31,13 @@ void captureData() {
     // DHT11 is synchronous. Never start a fresh acquisition during servo control;
     // retain fresh cached captures, otherwise report unavailable rather than stale data.
     servoTick();
-    if (servoActive) { protocolError(503, "Capture deferred during servo control"); return; }
+    if (servoActive) { protocolError(409, "capture-deferred: release servo control before acquiring a fresh sample"); return; }
     sampled = true;
     lastSample = now;
     sampleValid = readSensors(dht, [](int pin) { return analogRead(pin); }, sample);
   }
   // A failed sample remains an error throughout the sampling interval.
-  if (!sampleValid) { protocolError(503, "DHT11 read failed or outside rated range"); return; }
+  if (!sampleValid) { protocolError(503, "DHT11 or pH ADC read failed or outside valid range"); return; }
   JsonDocument doc;
   sources(doc);
   doc["temperature"] = sample.temperature;
@@ -49,7 +50,7 @@ void captureData() {
   doc["sampleAgeMs"] = now - lastSample;
   String body;
   serializeJson(doc, body);
-  server.send(200, "application/json", body);
+  mqttReply(200, "application/json", body);
 }
 void handleStatus() {
   if (!authorized()) return;
@@ -60,10 +61,17 @@ void handleStatus() {
   doc["ip"] = WiFi.localIP().toString();
   doc["phLabel"] = "pH (potentiometer simulation)";
   doc["samplingIntervalMs"] = SENSOR_INTERVAL_MS;
+  doc["uptimeMs"] = uint32_t(millis());
+  doc["sampled"] = sampled; doc["sampleValid"] = sampleValid;
+  if (sampled) doc["sampleAgeMs"] = uint32_t(millis() - lastSample);
+  doc["servoActive"] = servoActive; doc["servoEpoch"] = servoEpoch;
+  doc["servoAngle"] = sensorAngle; doc["servoDirection"] = sensorDirection;
+  doc["soilRaw"] = sampled ? sample.soilRaw : -1;
+  doc["soilCalibrated"] = SOIL_DRY_RAW >= 0 && SOIL_WET_RAW >= 0 && SOIL_DRY_RAW != SOIL_WET_RAW;
   sources(doc);
   String body;
   serializeJson(doc, body);
-  server.send(200, "application/json", body);
+  mqttReply(200, "application/json", body);
 }
 void setup() {
   Serial.begin(115200);
@@ -90,13 +98,16 @@ void setup() {
   server.on("/capture", HTTP_GET, captureData);
   server.onNotFound([]() { protocolError(404, "Not found"); });
   server.begin();
+  setupMqtt();
 }
 void loop() {
+  tickMqtt();
   servoTick();
   static unsigned long lastReconnect = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
-    server.handleClient();
+    // Slow HTTP diagnostic clients must not stall MQTT actuator watchdogs.
+    if (!MQTT_ENABLED || !servoActive) server.handleClient();
   } else if (millis() - lastReconnect >= 5000) {
     lastReconnect = millis();
     WiFi.reconnect();
@@ -104,4 +115,14 @@ void loop() {
 
   servoTick(); // Enforce watchdog/interpolation immediately after synchronous HTTP work.
   delay(1);
+}
+
+void mqttStop() { servoExpire(); }
+void mqttDispatch(const String& method, const String& path) {
+  if (method == "POST" && path == "/servo-session") servoSession();
+  else if (method == "POST" && path == "/servo") servoCommand();
+  else if (method == "GET" && path == "/servo") servoStatus();
+  else if (method == "GET" && path == "/status") handleStatus();
+  else if (method == "GET" && path == "/capture") captureData();
+  else protocolError(404, "Unknown MQTT operation");
 }

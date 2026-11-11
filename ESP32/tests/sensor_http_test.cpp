@@ -16,7 +16,7 @@ int main() {
    server.input.clear(); serializeJson(request, server.input); server.request("/servo", HTTP_POST);
  };
  sendServo("INCREASE",1,servoEpoch); assert(server.status==200);
- server.request("/capture"); assert(server.status==503 && dht.reads==0);
+ server.request("/capture"); assert(server.status==409 && dht.reads==0);
  // Expired packets cannot refresh control, even when HTTP delivery was delayed.
  JsonDocument late; late["command"]="DECREASE"; late["sequence"]=2;
  late["epoch"]=servoEpoch; late["deadlineMs"]=uint32_t(millis()-1);

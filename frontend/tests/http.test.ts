@@ -20,3 +20,7 @@ it('aborted capture never starts after pending CSRF bootstrap',async()=>{
  await expect(request).rejects.toThrow();expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('204 means no saved reading',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:204})));expect(await new HttpClient().request('/sensors')).toBeNull();});
+it('capture deferred is explained as intentional and not as device failure', async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({type:'urn:plantclassifier:capture-deferred'}),{status:409})));
+ await expect(new HttpClient().request('/sensors/capture')).rejects.toThrow('Suelta el servo');
+});

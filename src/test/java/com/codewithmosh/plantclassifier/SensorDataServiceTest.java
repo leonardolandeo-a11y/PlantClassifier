@@ -155,4 +155,15 @@ class SensorDataServiceTest {
         assertThrows(org.springframework.dao.DataAccessException.class,()->service.captureData());
         verifyNoInteractions(ml);
     }
+    @Test void cachedSampleKeepsItsAgeAndExpiredSamplesAreNotSaved() {
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":60,\"simulated\":true,\"sampleAgeMs\":1500}");
+        Instant before = Instant.now();
+        var result = service.captureData();
+        assertTrue(result.capturedAt().isBefore(before.minusMillis(1400)));
+        assertTrue(result.capturedAt().isAfter(before.minusMillis(1600)));
+        server.reset(); clearInvocations(repository);
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":60,\"simulated\":true,\"sampleAgeMs\":2001}");
+        assertEquals("stale-sample", assertThrows(SystemFailure.class, service::captureData).category());
+        verifyNoInteractions(repository, ml);
+    }
 }

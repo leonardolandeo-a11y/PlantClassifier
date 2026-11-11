@@ -33,6 +33,9 @@ int main() {
   assert(readSensors(dht, [](int pin) { return pin == PH_PIN ? 1024 : 0; }, sample));
   assert(sample.soilRaw == -1 && isnan(sample.soilMoisture) && sample.humidity == 60);
   for (int value : { -100, 0, 4095, 5000 }) {
+    if (value < 0 || value > PH_ADC_MAX) {
+      assert(!readSensors(dht, [=](int) { return value; }, sample)); continue;
+    }
     assert(readSensors(dht, [=](int) { return value; }, sample));
     assert(sample.ph == (value <= 0 ? 0 : 14));
   }

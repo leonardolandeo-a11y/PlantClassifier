@@ -25,11 +25,13 @@ void servoReply() {
   JsonDocument doc;
   doc["angle"] = sensorAngle;
   doc["state"] = !sensorServoReady ? "fault" : sensorCentering ? "centering" : sensorDirection > 0 ? "increasing" : sensorDirection < 0 ? "decreasing" : "holding";
+  doc["sequence"] = servoSequence;
   doc["epoch"] = servoEpoch; doc["deviceTimeMs"] = uint32_t(millis());
-  String body; serializeJson(doc, body); server.send(200, "application/json", body);
+  String body; serializeJson(doc, body); mqttReply(200, "application/json", body);
 }
 void servoStatus() { if (authorized()) { servoTick(); servoReply(); } }
 void servoSession() {
+  if (MQTT_ENABLED && !mqttHandling) { protocolError(409, "MQTT owns actuators"); return; }
   if (!authorized()) return;
   servoExpire();
   ++servoEpoch; if (!servoEpoch) ++servoEpoch;
@@ -37,9 +39,10 @@ void servoSession() {
   servoReply();
 }
 void servoCommand() {
+  if (MQTT_ENABLED && !mqttHandling) { protocolError(409, "MQTT owns actuators"); return; }
   if (!authorized()) return;
   JsonDocument doc;
-  if (server.arg("plain").length() > 256 || deserializeJson(doc, server.arg("plain")) ||
+  if (requestBody().length() > 256 || deserializeJson(doc, requestBody()) ||
       !doc["command"].is<const char*>() || !doc["epoch"].is<uint32_t>() ||
       !doc["sequence"].is<uint32_t>() || !doc["deadlineMs"].is<uint32_t>()) {
     protocolError(400, "Invalid servo command"); return;

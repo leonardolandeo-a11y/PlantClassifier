@@ -69,3 +69,9 @@ ESP32/**/wifi_config.h
 MLClassification/model.candidate.pkl
 
 frontend/dist/
+
+# Local MQTT technical secrets
+ESP32/**/mqtt_config.h
+docker/mosquitto/secrets/
+
+.venv-diagnostics/

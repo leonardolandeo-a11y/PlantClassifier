@@ -18,12 +18,14 @@ final class DeviceResponse {
     private static JsonNode read(RestClient.RequestHeadersSpec<?> request, boolean movement) {
         return request.exchange((req, response) -> {
             int status = response.getStatusCode().value();
-            if (movement && status == 409) {
+            if (status == 409) {
                 byte[] body = response.getBody().readNBytes(8193);
                 if (body.length <= 8192) {
                     try {
                         var error = JSON.readTree(body);
-                        if (error != null && error.path("error").asString("").startsWith("Reversal interlock:"))
+                        if (error != null && error.path("error").asString("").startsWith("capture-deferred:"))
+                            throw new SystemFailure(409, "capture-deferred", "Suelta el servo para obtener una muestra nueva; el sensor no está averiado.");
+                        if (movement && error != null && error.path("error").asString("").startsWith("Reversal interlock:"))
                             throw new SystemFailure(409, "reversal-interlock",
                                     "Cambio de sentido rechazado: suelta las teclas, espera al menos 500 ms y a que el motor se detenga, y vuelve a pulsar.");
                     } catch (tools.jackson.core.JacksonException ignored) { /* Generic rejection below. */ }

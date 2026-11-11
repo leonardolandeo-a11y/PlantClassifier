@@ -11,6 +11,12 @@ import org.springframework.web.client.RestClient;
 
 @Configuration
 public class DeviceClients {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.codewithmosh.plantclassifier.mqtt.MqttDeviceTransport mqtt;
+    private RestClient routed(RestClient http, String role) {
+        return mqtt.enabled() ? http.mutate().requestInterceptor((request, body, execution) ->
+                mqtt.exchange(role, request.getMethod().name(), request.getURI().getPath(), body)).build() : http;
+    }
     public static RestClient client(String baseUrl, String token, Duration connect, Duration read) {
         URI uri = URI.create(baseUrl);
         if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme()))
@@ -34,18 +40,18 @@ public class DeviceClients {
     RestClient sensors(@Value("${esp32.url}") String url, @Value("${device.token}") String token,
                        @Value("${esp32.connect-timeout}") Duration connect,
                        @Value("${esp32.read-timeout}") Duration read) {
-        return client(url, token, connect, read);
+        return routed(client(url, token, connect, read), "sensor");
     }
     // Dedicated budget: obsolete servo commands must fail before the 1 s watchdog.
     // Capture requests retain their independent, longer sensor timeout.
     @Bean("servoClient")
     RestClient servo(@Value("${esp32.url}") String url, @Value("${device.token}") String token) {
-        return client(url, token, Duration.ofMillis(250), Duration.ofMillis(600));
+        return routed(client(url, token, Duration.ofMillis(250), Duration.ofMillis(600)), "sensor");
     }
     @Bean("movementClient")
     RestClient movement(@Value("${movement.esp32.url}") String url, @Value("${device.token}") String token,
                         @Value("${movement.connect-timeout}") Duration connect,
                         @Value("${movement.read-timeout}") Duration read) {
-        return client(url, token, connect, read);
+        return routed(client(url, token, connect, read), "movement");
     }
 }

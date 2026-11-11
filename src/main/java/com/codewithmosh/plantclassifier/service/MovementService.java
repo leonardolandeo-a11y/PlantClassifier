@@ -28,32 +28,49 @@ public class MovementService {
                     (System.nanoTime() - started) / 1_000_000.0);
         }
     }
+    private final java.util.concurrent.atomic.AtomicBoolean acquiring = new java.util.concurrent.atomic.AtomicBoolean();
     private boolean combinedSupported;
     private ControlSession active;
     private String owner;
     private long originNanos;
     private long sequence;
     private long lastAccepted;
+    private long controlRevision;
 
     public MovementService(@Qualifier("movementClient") RestClient client) { this.client = client; }
 
-    // Session acquisition is serialized. The device stops and rotates its epoch on every acquisition.
-    public synchronized ControlSession acquire(String owner) {
-        active = null;
-        var json = timedRead("acquire", client.post().uri("/control-session"));
-        var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"),
-                json.has("protocolVersion") ? DeviceResponse.integer(json, "protocolVersion") : 1);
-        if (!session.sessionId().matches("[0-9a-f]{32}")
-                || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL) {
-            throw new SystemFailure(502, "device-response", "Invalid controller session response");
-        }
-        this.combinedSupported = session.protocolVersion() == 2;
-        this.active = session;
-        this.owner = owner;
-        this.originNanos = System.nanoTime(); // Conservative: response transit consumes device lifetime.
-        this.sequence = 0;
-        this.lastAccepted = System.nanoTime();
-        return session;
+    // Only acquisitions are serialized. No network call holds the state monitor needed by STOP.
+    public ControlSession acquire(String owner) {
+        if (!acquiring.compareAndSet(false, true))
+            throw new SystemFailure(409, "controller-busy", "Control acquisition already pending");
+        final long revision;
+        synchronized (this) { revision = controlRevision; }
+        try {
+            var json = timedRead("acquire", client.post().uri("/control-session"));
+            var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"),
+                    json.has("protocolVersion") ? DeviceResponse.integer(json, "protocolVersion") : 1);
+            if (!session.sessionId().matches("[0-9a-f]{32}")
+                    || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL)
+                throw new SystemFailure(502, "device-response", "Invalid controller session response");
+            synchronized (this) {
+                if (revision == controlRevision) {
+                    combinedSupported = session.protocolVersion() == 2;
+                    active = session; this.owner = owner;
+                    originNanos = System.nanoTime(); sequence = 0; lastAccepted = originNanos;
+                    return session;
+                }
+            }
+            // STOP overtook acquisition. Close its late epoch without making it available to callers.
+            byte[] body = JSON.writeValueAsBytes(Map.of("command", "STOP", "speed", 0,
+                    "sessionId", session.sessionId(), "sequence", 1, "deadlineMs", 0));
+            try { timedRead("cancel-acquire", client.post().uri("/movement")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).contentLength(body.length).body(body)); }
+            catch (RuntimeException ignored) { /* Unconfirmed close: independent device watchdog still applies. */ }
+            throw new SystemFailure(409, "acquisition-cancelled", "STOP cancelled pending acquisition; press again");
+        } catch (RuntimeException error) {
+            synchronized (this) { active = null; }
+            throw error;
+        } finally { acquiring.set(false); }
     }
 
     /** Release closes the owner's device epoch, even when a browser has lost its local state. */
@@ -92,7 +109,7 @@ public class MovementService {
             lastAccepted = now;
             // Firmware compares this against millis(), including uint32 rollover. No clock synchronization needed.
             deadline = (active.deviceTimeMs() + (now - originNanos) / 1_000_000 + 1000) & 0xffffffffL;
-            if (request.command().equals("STOP")) active = null;
+            if (request.command().equals("STOP")) { active = null; ++controlRevision; }
         }
         // No network lock: STOP can overtake an in-flight command; firmware enforces epoch + sequence.
         var fields = new java.util.HashMap<String, Object>(Map.of(

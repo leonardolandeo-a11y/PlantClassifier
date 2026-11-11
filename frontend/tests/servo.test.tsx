@@ -116,3 +116,24 @@ it('timeout fails closed, and unmount while acquiring closes the late session', 
   await act(async () => {resolve({angle:100,state:'holding',epoch:10,deviceTimeMs:0});});
   expect(commands).toEqual(['INCREASE','HOLD','HOLD']);
 });
+it('coalesces E/Q during acquisition and releasing Q returns to held E without a new session', async () => {
+  vi.useFakeTimers();
+  let acquired!: (value: unknown) => void;
+  let sessions = 0;
+  const commands: string[] = [];
+  const value = {angle:100,state:'decreasing',epoch:15,deviceTimeMs:0};
+  vi.spyOn(httpClient, 'request').mockImplementation(async (url, options) => {
+    if (url.endsWith('/session')) { sessions++; return await new Promise<unknown>(resolve => {acquired=resolve;}) as never; }
+    const command=(options?.body as {command?:string})?.command;
+    if(command) commands.push(command);
+    return value as never;
+  });
+  render(<ServoPanel />);
+  await act(async () => {fireEvent.keyDown(window,{key:'e'}); fireEvent.keyDown(window,{key:'q'});});
+  await act(async () => {acquired(value);});
+  expect(commands).toEqual(['DECREASE']); expect(sessions).toBe(1);
+  await act(async () => {fireEvent.keyUp(window,{key:'q'});});
+  expect(commands.at(-1)).toBe('INCREASE'); expect(sessions).toBe(1);
+  await act(async () => {fireEvent.keyUp(window,{key:'e'});});
+  expect(commands.at(-1)).toBe('HOLD');
+});

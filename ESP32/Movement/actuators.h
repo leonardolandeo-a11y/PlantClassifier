@@ -55,6 +55,7 @@ bool motorDrive(int direction, int speed) {
       return false;
     }
   }
+  if (driveDirection == direction && currentSpeed == speed) return true;
   // A heartbeat must not pulse STBY or rewrite direction while already powered.
   if (driveDirection != direction) {
     digitalWrite(STBY, LOW);

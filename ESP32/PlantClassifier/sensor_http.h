@@ -4,9 +4,10 @@ void protocolError(int status, const char* message) {
   result["error"] = message;
   String body;
   serializeJson(result, body);
-  server.send(status, "application/json", body);
+  mqttReply(status, "application/json", body);
 }
 bool authorized() {
+  if (mqttHandling) return true;
   String supplied = server.header("X-Device-Token");
   size_t length = strlen(DEVICE_TOKEN);
   unsigned int difference = supplied.length() ^ length;

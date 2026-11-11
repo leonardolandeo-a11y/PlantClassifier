@@ -49,6 +49,16 @@ export class HttpClient {
     }
     if (!response.ok) {
       if (response.status === 403) { this.csrf = undefined; throw new Error('Session protection expired; reload the page'); }
+      const problem = await response.json().catch(() => null) as { type?: string } | null;
+      const category = problem?.type?.replace('urn:plantclassifier:', '');
+      const messages: Record<string, string> = {
+        'capture-deferred': 'Suelta el servo y vuelve a capturar. La lectura se aplazó para mantener el control seguro.',
+        'stale-sample': 'La muestra ha caducado. Suelta el servo y captura otra vez.',
+        'broker-disconnected': 'Broker MQTT desconectado. Suelta los controles y vuelve a pulsar después de reconectar.',
+        'device-disconnected': 'ESP32 desconectada o reiniciada. El estado no está confirmado.',
+        'device-ack-timeout': 'Sin confirmación del ESP32. Suelta los controles; el watchdog sigue activo.',
+      };
+      if (category && messages[category]) throw new Error(messages[category]);
       if (response.status === 409) throw new ControlRejected('Command rejected: control expired or superseded');
       if (response.status === 504) throw new Error('Device timed out');
       if (response.status === 502) throw new Error('Device unreachable or invalid response');

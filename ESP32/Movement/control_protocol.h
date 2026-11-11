@@ -20,9 +20,10 @@ void protocolError(int status, const char* message) {
   result["error"] = message;
   String body;
   serializeJson(result, body);
-  server.send(status, "application/json", body);
+  mqttReply(status, "application/json", body);
 }
 bool authorized() {
+  if (mqttHandling) return true;
   String supplied = server.header("X-Device-Token");
   size_t length = strlen(DEVICE_TOKEN);
   unsigned int difference = supplied.length() ^ length;
@@ -35,6 +36,7 @@ bool authorized() {
   return true;
 }
 void acquireControl() {
+  if (MQTT_ENABLED && !mqttHandling) { protocolError(409, "MQTT owns actuators"); return; }
   if (!authorized()) return;
   robotStop();
   char id[33];
@@ -49,12 +51,13 @@ void acquireControl() {
   result["protocolVersion"] = 2;
   String body;
   serializeJson(result, body);
-  server.send(200, "application/json", body);
+  mqttReply(200, "application/json", body);
 }
 bool readCommand(JsonDocument& doc, String& command, int& speed) {
+  if (MQTT_ENABLED && !mqttHandling) { protocolError(409, "MQTT owns actuators"); return false; }
   if (!authorized()) return false;
-  if (!server.hasArg("plain") || server.arg("plain").length() > 1024 ||
-      deserializeJson(doc, server.arg("plain"))) {
+  if (requestBody().length() > 1024 ||
+      deserializeJson(doc, requestBody())) {
     protocolError(400, "Invalid JSON body"); return false;
   }
   if (!doc["command"].is<const char*>() || !doc["sessionId"].is<const char*>() ||

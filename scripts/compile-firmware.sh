@@ -9,7 +9,7 @@ for sketch in Movement PlantClassifier; do
   mkdir -p "$work/$sketch"
   cp "ESP32/$sketch/$sketch.ino" "$work/$sketch/"
   for header in ESP32/"$sketch"/*.h; do
-    [ "$(basename "$header")" = wifi_config.h ] || cp "$header" "$work/$sketch/"
+    [[ "$(basename "$header")" = wifi_config.h || "$(basename "$header")" = mqtt_config.h ]] || cp "$header" "$work/$sketch/"
   done
   cat > "$work/$sketch/wifi_config.h" <<'CONFIG'
 #pragma once
@@ -18,7 +18,11 @@ const char* WIFI_PASSWORD = "compile-only";
 const char* DEVICE_TOKEN = "compile-only-not-a-real-token-000000000000";
 #define SIMULATION_MODE 1
 CONFIG
-  "$cli" compile --fqbn "$fqbn" --build-path "$work/build-$sketch" "$work/$sketch"
+  "$cli" compile --libraries "$PWD/ESP32/libraries" --fqbn "$fqbn" --build-path "$work/build-$sketch" "$work/$sketch"
+  # Compile MQTT path too, using placeholders only. Never copy local technical secrets.
+  cp "ESP32/$sketch/mqtt_config.h.example" "$work/$sketch/mqtt_config.h"
+  "$cli" compile --libraries "$PWD/ESP32/libraries" --fqbn "$fqbn" --build-path "$work/build-$sketch-mqtt" "$work/$sketch"
+  rm "$work/$sketch/mqtt_config.h"
   # Inspect only sketch output: WiFi libraries legitimately use hardware internally.
   object="$work/build-$sketch/sketch/$sketch.ino.cpp.o"
   nm_tool=$(find "${ARDUINO_DATA_DIR:-$HOME/.arduino15}/packages/esp32/tools" -type f -name '*-nm' | head -1)
@@ -31,5 +35,9 @@ done
 
 # Compile future hardware branches only; these artifacts are never uploaded by this script.
 sed -i 's/#define SIMULATION_MODE 1/#define SIMULATION_MODE 0/' "$work/Movement/wifi_config.h"
-"$cli" compile --fqbn "$fqbn" --build-path "$work/build-hardware" "$work/Movement"
+"$cli" compile --libraries "$PWD/ESP32/libraries" --fqbn "$fqbn" --build-path "$work/build-hardware" "$work/Movement"
 echo 'PASS Movement: hardware branch compiles (not flashed or exercised)'
+
+cp ESP32/Movement/mqtt_config.h.example "$work/Movement/mqtt_config.h"
+"$cli" compile --libraries "$PWD/ESP32/libraries" --fqbn "$fqbn" --build-path "$work/build-hardware-mqtt" "$work/Movement"
+echo 'PASS Movement: MQTT hardware branch compiles (not flashed)'

@@ -1,0 +1,25 @@
+user backend
+topic write plant/v1/+/command
+topic write plant/v1/+/urgent
+topic read plant/v1/+/ack
+topic read plant/v1/+/state
+topic read plant/v1/+/telemetry
+
+user movement
+topic read plant/v1/movement/command
+topic read plant/v1/movement/urgent
+topic write plant/v1/movement/ack
+topic write plant/v1/movement/state
+topic write plant/v1/movement/telemetry
+topic readwrite plant/v1/movement/probe
+
+user sensor
+topic read plant/v1/sensor/command
+topic read plant/v1/sensor/urgent
+topic write plant/v1/sensor/ack
+topic write plant/v1/sensor/state
+topic write plant/v1/sensor/telemetry
+topic readwrite plant/v1/sensor/probe
+
+user health
+topic write plant/health
