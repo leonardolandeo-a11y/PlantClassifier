@@ -31,6 +31,9 @@ WebServer server(80);
 // ============================================================
 // RESPUESTAS HTTP
 // ============================================================
+String acceptedCommand = "STOP";
+String acceptedSteering = "CENTER";
+uint32_t acceptedSequence = 0;
 void sendStatus() {
   JsonDocument doc;
   doc["status"] = "online";
@@ -39,6 +42,21 @@ void sendStatus() {
   doc["role"] = "movement";
   doc["hardwareOutputEnabled"] = !bool(SIMULATION_MODE);
   doc["controlActive"] = gate.active;
+  doc["protocolVersion"] = 2;
+  doc["lastReceivedCommand"] = lastReceivedCommand;
+  doc["lastReceivedSteering"] = lastReceivedSteering;
+  doc["lastReceivedSequence"] = lastReceivedSequence;
+  doc["servoChannel"] = servoOK ? servoChannel : -1;
+  doc["servoTimer"] = servoOK ? (servoChannel / 2) % 4 : -1;
+  doc["lastAcceptedCommand"] = acceptedCommand;
+  doc["lastAcceptedSteering"] = acceptedSteering;
+  doc["lastAcceptedSequence"] = acceptedSequence;
+  doc["protocolRejections"] = protocolRejections;
+  doc["lastProtocolError"] = lastProtocolError;
+  doc["physicalMotionVerified"] = false;
+  doc["servoPin"] = SERVO_PIN;
+  doc["servoFrequencyHz"] = 50;
+  doc["motorPwmChannel"] = MOTOR_PWM_CHANNEL;
   doc["actuatorsReady"] = !SIMULATION_MODE && pwmOK && servoOK;
   doc["reversalDeadtimeMs"] = REVERSAL_DEADTIME_MS;
   doc["ip"] = WiFi.localIP().toString();
@@ -76,41 +94,35 @@ void handleMovement() {
   int speed;
   if (!readCommand(doc, command, speed)) return;
 
-  if (command == "FORWARD" || command == "BACKWARD") {
-#if !SIMULATION_MODE
-    if (!pwmOK || !servoOK) {
-      robotStop(); gate.invalidate();
-      protocolError(503, "Actuator initialization failed");
-      return;
-    }
-#endif
-    int direction = command == "FORWARD" ? 1 : -1;
-    if (!motorDrive(direction, speed)) {
-      robotStop(); gate.invalidate();
-      protocolError(pwmOK ? 409 : 503, pwmOK ? "Reversal interlock: release keys, wait for motor to stop, then press again" : "Motor PWM fault; restart required");
-      return;
-    }
-  } else if (command == "LEFT" || command == "RIGHT" || command == "CENTER") {
-#if !SIMULATION_MODE
-    if (!servoOK) {
-      robotStop(); gate.invalidate();
-      protocolError(503, "Servo initialization failed");
-      return;
-    }
-#endif
-    motorStop(); // Steering-only commands must not leave earlier propulsion running.
-    servoMove(command == "LEFT" ? SERVO_LEFT : command == "RIGHT" ? SERVO_RIGHT : SERVO_CENTER);
-  } else if (command == "STOP") {
-    robotStop();
-  } else {
-    protocolError(400, "Unknown command");
+  // Legacy drive commands deterministically center steering. Legacy LEFT/RIGHT remain motor-off.
+  String steering = doc["steering"].isNull()
+      ? (command == "LEFT" || command == "RIGHT" ? command : String("CENTER"))
+      : doc["steering"].as<String>();
+  int direction = command == "FORWARD" ? 1 : command == "BACKWARD" ? -1 : 0;
+  int targetAngle = steering == "LEFT" ? SERVO_LEFT : steering == "RIGHT" ? SERVO_RIGHT : SERVO_CENTER;
+  if (command == "STOP") robotStop();
+  else if (!applyMovement(direction, direction == 0 ? 0 : speed, targetAngle)) {
+    gate.invalidate();
+    protocolError(!pwmOK || !servoOK ? 503 : 409,
+        !servoOK ? "Servo initialization failed" : !pwmOK ? "Motor PWM fault; restart required" : "Reversal interlock: release keys and wait");
     return;
   }
+  if (acceptedCommand != command || acceptedSteering != steering)
+    Serial.printf("[CONTROL] accepted propulsion=%d speed=%d steering=%s angle=%d servoAttached=%d pwmReady=%d\n",
+                  driveDirection, currentSpeed, steering.c_str(), currentAngle, servoOK, pwmOK);
+  acceptedCommand = command;
+  acceptedSteering = steering;
+  acceptedSequence = doc["sequence"].as<uint32_t>();
 
   lastCommandTime = millis();
 
   JsonDocument result;
   result["status"] = "OK";
+  result["protocolVersion"] = 2;
+  result["steering"] = steering;
+  result["servoAttached"] = servoOK;
+  result["pwmAttached"] = pwmOK;
+  result["physicalMotionVerified"] = false;
   result["simulated"] = bool(SIMULATION_MODE);
   result["sessionId"] = controllerSession;
   result["sequence"] = doc["sequence"].as<uint32_t>();

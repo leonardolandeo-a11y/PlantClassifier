@@ -40,7 +40,7 @@ class ApiSecurityTest {
         org.junit.jupiter.api.Assertions.assertNull(session.getAttribute("SPRING_SECURITY_CONTEXT"));
         var token = (org.springframework.security.web.csrf.CsrfToken) response.getRequest().getAttribute(
                 org.springframework.security.web.csrf.CsrfToken.class.getName());
-        when(movement.acquire(session.getId())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L));
+        when(movement.acquire(session.getId())).thenReturn(new MovementService.ControlSession("a".repeat(32),0L,2L));
         mvc.perform(post("/movement/session").session(session).header(token.getHeaderName(), token.getToken()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.sessionId").value("a".repeat(32)));
         verify(movement).acquire(session.getId());

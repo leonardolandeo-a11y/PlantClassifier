@@ -22,14 +22,14 @@ export class HttpClient {
     // A cancelled sensor read must not start after a deferred CSRF bootstrap.
     signal?.throwIfAborted();
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const timeout = AbortSignal.timeout(url.startsWith('/movement') ? 1200 : 35000);
+    const timeout = AbortSignal.timeout((url.startsWith('/movement') || url.startsWith('/sensor-servo')) ? 1200 : 35000);
     let response: Response;
     try {
       response = await fetch(url, {
         method: mutation ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        keepalive: url === '/movement' && (body as { command?: string })?.command === 'STOP',
+        keepalive: (url === '/movement' && (body as { command?: string })?.command === 'STOP') || (url === '/sensor-servo' && (body as { command?: string })?.command === 'HOLD'),
       });
     } catch (error) {
       if (signal?.aborted) throw error;

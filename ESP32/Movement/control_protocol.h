@@ -5,9 +5,17 @@
 
 CommandGate gate;
 String controllerSession;
+String lastProtocolError;
+String lastReceivedCommand = "NONE";
+String lastReceivedSteering = "NONE";
+uint32_t lastReceivedSequence = 0;
+uint32_t protocolRejections = 0;
 void robotStop();
 
 void protocolError(int status, const char* message) {
+  lastProtocolError = message;
+  ++protocolRejections;
+  Serial.printf("[CONTROL] rejected http=%d reason=%s\n", status, message);
   JsonDocument result;
   result["error"] = message;
   String body;
@@ -38,6 +46,7 @@ void acquireControl() {
   JsonDocument result;
   result["sessionId"] = controllerSession;
   result["deviceTimeMs"] = millis();
+  result["protocolVersion"] = 2;
   String body;
   serializeJson(result, body);
   server.send(200, "application/json", body);
@@ -59,6 +68,22 @@ bool readCommand(JsonDocument& doc, String& command, int& speed) {
       command != "LEFT" && command != "RIGHT" && command != "CENTER" && command != "STOP")) {
     protocolError(400, "Invalid command or speed"); return false;
   }
+  lastReceivedCommand = command;
+  lastReceivedSequence = doc["sequence"].as<uint32_t>();
+  lastReceivedSteering = command == "LEFT" || command == "RIGHT" ? command : String("CENTER");
+  if (!doc["steering"].isNull()) {
+    lastReceivedSteering = "INVALID";
+    if (!doc["steering"].is<const char*>()) {
+      protocolError(400, "Invalid steering"); return false;
+    }
+    String steering = doc["steering"].as<String>();
+    if ((steering != "LEFT" && steering != "CENTER" && steering != "RIGHT") ||
+        ((command == "LEFT" || command == "RIGHT" || command == "CENTER") && steering != command) ||
+        (command == "STOP" && steering != "CENTER")) {
+      protocolError(400, "Invalid or conflicting steering"); return false;
+    }
+  }
+  if (!doc["steering"].isNull()) lastReceivedSteering = doc["steering"].as<String>();
   if (controllerSession != doc["sessionId"].as<String>() ||
       !gate.accept(doc["sequence"].as<uint32_t>(), doc["deadlineMs"].as<uint32_t>(), millis(), command == "STOP")) {
     protocolError(409, "Stale, duplicate or expired control"); return false;

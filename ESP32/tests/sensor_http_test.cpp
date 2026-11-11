@@ -2,10 +2,36 @@
 #include "PlantClassifier.ino"
 int main() {
  setup();
- assert(dht.initialized && server.routes.size()==2);
+ assert(dht.initialized && server.routes.size()==5);
  server.request("/capture"); assert(server.status==401 && dht.reads==0);
  server.request("/status"); assert(server.status==401);
+ server.request("/servo-session", HTTP_POST); assert(server.status==401);
+ server.request("/servo", HTTP_POST); assert(server.status==401);
  server.token=DEVICE_TOKEN;
+ server.request("/servo-session", HTTP_POST); assert(server.status==200);
+ auto sendServo = [&](const char* cmd, unsigned seq, unsigned epoch) {
+   JsonDocument request; request["command"]=cmd; request["sequence"]=seq;
+   request["epoch"]=epoch; request["deadlineMs"]=uint32_t(millis()+750);
+   server.input.clear(); serializeJson(request, server.input); server.request("/servo", HTTP_POST);
+ };
+ sendServo("INCREASE",1,servoEpoch); assert(server.status==200);
+ mockTime+=15; servoTick(); assert(sensorAngle==102);
+ sendServo("HOLD",2,servoEpoch); assert(server.status==200);
+ sendServo("INCREASE",1,servoEpoch); assert(server.status==409);
+ mockTime+=15; servoTick(); assert(sensorAngle==102);
+ server.request("/servo-session", HTTP_POST);
+ sendServo("DECREASE",1,servoEpoch);
+ for(int i=0;i<30;i++) { mockTime+=15; servoTick(); }
+ assert(sensorAngle==70);
+ sendServo("CENTER",2,servoEpoch);
+ for(int i=0;i<15;i++) { mockTime+=15; servoTick(); }
+ assert(sensorAngle==100);
+ sendServo("INCREASE",3,servoEpoch); mockTime+=1001; servoTick();
+ assert(sensorAngle==100 && !servoActive);
+ sendServo("INCREASE",4,servoEpoch); assert(server.status==409);
+
+ server.request("/servo-session", HTTP_POST); sendServo("INCREASE",1,servoEpoch);
+ wifiStatus=0; servoTick(); assert(!servoActive && sensorDirection==0); wifiStatus=WL_CONNECTED;
  server.request("/status");
  JsonDocument doc;
  assert(!deserializeJson(doc,server.body));

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MovementControl, type Command, type ControlState, type Transport } from '../movement/controller';
+import { intent, MovementControl, type Steering, type Command, type ControlState, type Transport } from '../movement/controller';
 import { movementApi } from '../api/movementApi';
 
-type Snapshot = { message: string; state: ControlState; command: Command; pressed: string[] };
-const initial: Snapshot = { message: 'Ready for keyboard control — press W/A/S/D', state: 'IDLE', command: 'STOP', pressed: [] };
+type Snapshot = { message: string; state: ControlState; command: Command; steering: Steering; pressed: string[] };
+const initial: Snapshot = { message: 'Ready for keyboard control — press W/A/S/D', state: 'IDLE', command: 'STOP', steering: 'CENTER', pressed: [] };
 const commands: Record<string, Command> = { w: 'FORWARD', a: 'LEFT', s: 'BACKWARD', d: 'RIGHT' };
 type Runtime = { control: MovementControl; held: Map<string, string>; publish: () => void };
 
@@ -14,8 +14,8 @@ export function useMovement(transport: Transport = movementApi) {
     let alive = true;
     let message = initial.message;
     const held = new Map<string, string>();
-    const command = () => commands[Array.from(held.values()).at(-1) ?? ''] ?? 'STOP';
-    const publish = () => { if (alive) setSnapshot({ message, state: control.state, command: command(), pressed: [...held.values()] }); };
+    const command = () => intent(held.values());
+    const publish = () => { if (alive) setSnapshot({ message, state: control.state, ...command(), pressed: [...held.values()] }); };
     const control = new MovementControl(transport, text => {
       message = text;
       // Publish after the controller completes its synchronous state transition.
@@ -33,13 +33,13 @@ export function useMovement(transport: Transport = movementApi) {
   const press = useCallback((key: string, source = `key:${key}`) => {
     const r = runtime.current;
     if (!r || !commands[key] || r.held.has(source)) return;
-    r.held.set(source, key); r.control.set(commands[key]); r.publish();
+    r.held.set(source, key); const next = intent(r.held.values()); r.control.set(next.command, next.steering); r.publish();
   }, []);
   const release = useCallback((source: string) => {
     const r = runtime.current;
     if (!r || !r.held.delete(source)) return;
-    const next = commands[Array.from(r.held.values()).at(-1) ?? ''] ?? 'STOP';
-    r.control.set(next); r.publish();
+    const next = intent(r.held.values());
+    r.control.set(next.command, next.steering); r.publish();
   }, []);
   const stop = useCallback(() => {
     const r = runtime.current;

@@ -9,6 +9,7 @@
 #endif
 WebServer server(80);
 #include "sensor_http.h"
+#include "sensor_servo.h"
 DHT dht(DHTPIN, DHTTYPE);
 unsigned long lastSample = 0;
 bool sampled = false;
@@ -69,6 +70,7 @@ void handleStatus() {
 void setup() {
   Serial.begin(115200);
   dht.begin();
+  setupSensorServo();
   analogReadResolution(PH_ADC_BITS);
   analogSetPinAttenuation(PH_PIN, ADC_11db);
   pinMode(PH_PIN, INPUT);
@@ -82,12 +84,16 @@ void setup() {
   Serial.print("[SENSOR] IP: "); Serial.println(WiFi.localIP());
   const char* headers[] = {"X-Device-Token"};
   server.collectHeaders(headers, 1);
+  server.on("/servo", HTTP_GET, servoStatus);
+  server.on("/servo", HTTP_POST, servoCommand);
+  server.on("/servo-session", HTTP_POST, servoSession);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/capture", HTTP_GET, captureData);
   server.onNotFound([]() { protocolError(404, "Not found"); });
   server.begin();
 }
 void loop() {
+  servoTick();
   static unsigned long lastReconnect = 0;
 
   if (WiFi.status() == WL_CONNECTED) {

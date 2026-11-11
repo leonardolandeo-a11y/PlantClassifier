@@ -31,7 +31,7 @@ class MovementServiceTest {
         server.expect(requestTo("http://robot.test/movement"))
                 .andExpect(method(HttpMethod.POST)).andExpect(header("X-Device-Token","test-token"))
                 .andExpect(content().json("{\"command\":\""+command+"\",\"speed\":150,\"sessionId\":\""+id+"\",\"sequence\":"+sequence+"}"))
-                .andRespond(withSuccess("{\"status\":\"OK\",\"command\":\""+command+"\",\"speed\":150,\"simulated\":true,\"sessionId\":\""+id+"\",\"sequence\":"+sequence+"}",MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"status\":\"OK\",\"command\":\""+command+"\",\"speed\":"+((command.equals("FORWARD") || command.equals("BACKWARD"))?150:0)+",\"simulated\":true,\"sessionId\":\""+id+"\",\"sequence\":"+sequence+"}",MediaType.APPLICATION_JSON));
     }
     @Test void sendsExpectedJsonAndReturnsDeviceAcknowledgement() {
         acquire(); expectCommand("FORWARD",1);
@@ -85,4 +85,40 @@ class MovementServiceTest {
         assertThrows(SystemFailure.class, () -> service.sendCommand(new MovementRequestDTO("FORWARD",150,id,2L),"owner"));
     }
 
+    void acquireV2() {
+        server.expect(requestTo("http://robot.test/control-session")).andRespond(withSuccess(
+            "{\"sessionId\":\""+id+"\",\"deviceTimeMs\":1000,\"protocolVersion\":2}",MediaType.APPLICATION_JSON));
+        assertEquals(2,service.acquire("owner").protocolVersion());server.verify();server.reset();
+    }
+    @Test void forwardsBothAxesAndValidatesCombinedAcknowledgement() {
+        for(String command:new String[]{"FORWARD","BACKWARD"}) for(String steering:new String[]{"LEFT","CENTER","RIGHT"}) {
+            acquireV2();
+            server.expect(requestTo("http://robot.test/movement"))
+                .andExpect(content().json("{\"command\":\""+command+"\",\"speed\":150,\"steering\":\""+steering+"\",\"sequence\":1}"))
+                .andExpect(request -> {
+                    var body=((org.springframework.mock.http.client.MockClientHttpRequest)request).getBodyAsString();
+                    var json=tools.jackson.databind.json.JsonMapper.builder().build().readTree(body);
+                    assertTrue(json.get("deadlineMs").longValue()>=2000);
+                    assertEquals(id,json.get("sessionId").asString());
+                })
+                .andRespond(withSuccess("{\"status\":\"OK\",\"command\":\""+command+"\",\"speed\":150,\"steering\":\""+steering+"\",\"protocolVersion\":2,\"simulated\":true,\"sessionId\":\""+id+"\",\"sequence\":1}",MediaType.APPLICATION_JSON));
+            var ack=service.sendCommand(new MovementRequestDTO(command,150,id,1L,steering),"owner");
+            assertEquals(steering,ack.steering());assertEquals(2L,ack.protocolVersion());server.verify();server.reset();
+        }
+    }
+    @Test void legacyFirmwareRejectsCombinedRequestBeforeSendingToDeviceButAllowsStop() {
+        acquire();
+        assertEquals(409,assertThrows(SystemFailure.class,()->service.sendCommand(
+            new MovementRequestDTO("FORWARD",150,id,1L,"LEFT"),"owner")).status());
+        expectCommand("STOP",2);service.sendCommand(new MovementRequestDTO("STOP",150,id,2L),"owner");server.verify();
+    }
+    @Test void combinedAckMustIncludeExactSteeringAndVersion() {
+        for(String fields:new String[]{"",",\"steering\":\"CENTER\",\"protocolVersion\":2",",\"steering\":\"LEFT\",\"protocolVersion\":1",",\"steering\":\"LEFT\",\"protocolVersion\":4294967298"}) {
+            acquireV2();
+            server.expect(requestTo("http://robot.test/movement")).andRespond(withSuccess(
+                "{\"status\":\"OK\",\"command\":\"FORWARD\",\"speed\":150,\"simulated\":true,\"sessionId\":\""+id+"\",\"sequence\":1"+fields+"}",MediaType.APPLICATION_JSON));
+            assertEquals(502,assertThrows(SystemFailure.class,()->service.sendCommand(new MovementRequestDTO("FORWARD",150,id,1L,"LEFT"),"owner")).status());
+            server.verify();server.reset();
+        }
+    }
 }

@@ -39,6 +39,7 @@ work=$(mktemp -d /tmp/plant-sensor-test.XXXXXX)
 trap 'rm -f "$binary"; rm -rf "$work"' EXIT
 cp ESP32/PlantClassifier/PlantClassifier.ino ESP32/PlantClassifier/sensor_*.h "$work/"
 cat > "$work/wifi_config.h" <<'CONFIG'
+#pragma once
 const char* WIFI_SSID="mock";
 const char* WIFI_PASSWORD="mock";
 const char* DEVICE_TOKEN="mock-device-token-at-least-32-characters";
@@ -46,3 +47,16 @@ CONFIG
 g++ -std=c++17 -Wall -Wextra -Werror -DCONFIG_IDF_TARGET_ESP32 \
   -IESP32/tests/sensor_mocks -I"$work" -I"$json_include" ESP32/tests/sensor_http_test.cpp -o "$work/test"
 "$work/test"
+
+# Exercise the real movement HTTP handler in both modes, with mock I/O only.
+mkdir -p "$work/Movement"
+cp ESP32/Movement/Movement.ino "$work/Movement/"
+for header in ESP32/Movement/*.h; do
+  [ "$(basename "$header")" = wifi_config.h ] || cp "$header" "$work/Movement/"
+done
+cp "$work/wifi_config.h" "$work/Movement/wifi_config.h"
+for mode in 0 1; do
+  g++ -std=c++17 -Wall -Wextra -Werror -DCONFIG_IDF_TARGET_ESP32 -DSIMULATION_MODE=$mode \
+    -IESP32/tests/movement_mocks -I"$work/Movement" -I"$json_include" ESP32/tests/movement_http_test.cpp -o "$work/movement-test"
+  "$work/movement-test"
+done

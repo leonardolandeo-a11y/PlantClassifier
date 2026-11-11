@@ -20,6 +20,7 @@ class DeviceState:
         self.last = 0
         self.command = 'STOP'
         self.speed = 0
+        self.steering = 'CENTER'
         self.lock = threading.Lock()
 
     def now(self):
@@ -29,6 +30,7 @@ class DeviceState:
         if self.session and ((self.now() - self.last) & 0xffffffff) > 1500:
             self.session = None
             self.command, self.speed = 'STOP', 0
+            self.steering = 'CENTER'
             print('[FAILSAFE] Control lost -> STOP (simulated)', flush=True)
 
 
@@ -70,7 +72,10 @@ def make_server(host, port, token, role="movement"):
                     self.reply(200, {'status': 'online', 'mode': 'simulation', 'simulated': True,
                                     'role': role, 'hardwareOutputEnabled': False,
                                     'controlActive': state.session is not None,
-                                    'command': state.command, 'speed': state.speed})
+                                    'command': state.command, 'speed': state.speed,
+                                    'protocolVersion': 2, 'steering': state.steering,
+                                    'steeringAngle': {'LEFT':70,'CENTER':100,'RIGHT':130}[state.steering],
+                                    'physicalMotionVerified': False})
                 elif self.path == '/capture' and role == 'sensor':
                     print('[SENSOR] SIMULATION ph=6.5 temperature=25.0 humidity=60.0', flush=True)
                     self.reply(200, {'ph': 6.5, 'temperature': 25.0, 'humidity': 60.0, 'simulated': True,
@@ -90,8 +95,9 @@ def make_server(host, port, token, role="movement"):
                     state.session = secrets.token_hex(16)
                     state.sequence, state.last = 0, state.now()
                     state.command, state.speed = 'STOP', 0
+                    state.steering = 'CENTER'
                     print('[CONTROL] Session acquired (simulated)', flush=True)
-                    self.reply(200, {'sessionId': state.session, 'deviceTimeMs': state.now()})
+                    self.reply(200, {'sessionId': state.session, 'deviceTimeMs': state.now(), 'protocolVersion': 2})
                     return
                 if self.path != '/movement':
                     self.reply(404, {'error': 'Not found'})
@@ -102,6 +108,9 @@ def make_server(host, port, token, role="movement"):
                         raise ValueError()
                     data = json.loads(self.rfile.read(length))
                     command = data['command'].upper()
+                    steering = data.get('steering', command if command in ('LEFT', 'RIGHT') else 'CENTER')
+                    if steering not in ('LEFT', 'CENTER', 'RIGHT') or (command in ('LEFT', 'RIGHT', 'CENTER') and steering != command) or (command == 'STOP' and steering != 'CENTER'):
+                        raise ValueError()
                     speed, sequence, deadline = (data[k] for k in ('speed', 'sequence', 'deadlineMs'))
                     if (command not in ('FORWARD', 'BACKWARD', 'LEFT', 'RIGHT', 'CENTER', 'STOP')
                             or any(type(v) is not int for v in (speed, sequence, deadline))
@@ -119,12 +128,15 @@ def make_server(host, port, token, role="movement"):
                     return
                 state.sequence, state.last = sequence, state.now()
                 state.command = command
+                state.steering = steering
                 state.speed = speed if command in ('FORWARD', 'BACKWARD') else 0
                 if command == 'STOP':
                     state.session = None
                 print(f'[CMD] {command} speed={state.speed} [SIMULATION]', flush=True)
                 self.reply(200, {'status': 'OK', 'command': command, 'speed': state.speed,
-                                'simulated': True, 'sessionId': data['sessionId'], 'sequence': sequence})
+                                'simulated': True, 'sessionId': data['sessionId'], 'sequence': sequence,
+                                'protocolVersion': 2, 'steering': steering,
+                                'angle': {'LEFT':70,'CENTER':100,'RIGHT':130}[steering]})
 
     server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True

@@ -19,7 +19,7 @@ describe('React robot lifecycle with simulated transport', () => {
  beforeEach(() => { vi.useFakeTimers(); vi.spyOn(document,'hasFocus').mockReturnValue(true); });
  function setup(acquire?: Transport['acquire']) {
   const calls: MovementRequest[]=[];let epoch=0;
-  const transport: Transport={acquire:vi.fn(acquire ?? (async()=>({sessionId:(++epoch).toString(16).padStart(32,'0')}))),send:vi.fn(async r=>{calls.push(r);return {...r,status:'OK',simulated:true};})};
+  const transport: Transport={acquire:vi.fn(acquire ?? (async()=>({protocolVersion:2,sessionId:(++epoch).toString(16).padStart(32,'0')}))),send:vi.fn(async r=>{calls.push(r);return {...r,status:'OK',simulated:true,protocolVersion:2};})};
   const hook=renderHook(()=>{ const m=useMovement(transport);useKeyboardMovement(m.press,m.release,m.stop);return m; },{wrapper:StrictMode});
   return {...hook,calls,transport};
  }
@@ -35,10 +35,31 @@ describe('React robot lifecycle with simulated transport', () => {
   const t=setup();fireEvent.keyDown(document,{key});await flush();expect(t.calls.at(-1)?.command).toBe(command);
   fireEvent.keyUp(document,{key});await flush();expect(t.calls.at(-1)?.command).toBe('STOP');t.unmount();
  });
- it('last key wins and releasing resumes the remaining held key',async()=>{
+ it('independent axes: releasing steering preserves propulsion',async()=>{
   const t=setup();fireEvent.keyDown(document,{key:'w'});await flush();fireEvent.keyDown(document,{key:'a'});await flush();
   fireEvent.keyUp(document,{key:'a'});await flush();fireEvent.keyUp(document,{key:'w'});await flush();
-  expect(t.calls.map(r=>r.command)).toEqual(['FORWARD','LEFT','FORWARD','STOP']);t.unmount();
+  expect(t.calls.map(r=>r.command)).toEqual(['FORWARD','FORWARD','FORWARD','STOP']);t.unmount();
+ });
+ it.each([['w','a','FORWARD','LEFT'],['w','d','FORWARD','RIGHT'],['s','a','BACKWARD','LEFT'],['s','d','BACKWARD','RIGHT']])('both input orders %s + %s show both keys; releasing propulsion stops first',async(drive,turn,command,steering)=>{
+  for(const order of [[drive,turn],[turn,drive]]) {
+   const t=setup();for(const key of order){fireEvent.keyDown(document,{key});await flush();}
+   expect(t.result.current.pressed).toEqual(order);
+   expect(t.calls.at(-1)).toMatchObject({command,steering,speed:150});
+   fireEvent.keyUp(document,{key:drive});await flush();
+   expect(t.calls.slice(-2).map(r=>r.command)).toEqual(['STOP',steering]);
+   expect(t.calls.at(-1)).toMatchObject({speed:0,steering});
+   expect(t.result.current.pressed).toEqual([turn]);
+   fireEvent.keyUp(document,{key:turn});await flush();expect(t.calls.at(-1)?.command).toBe('STOP');t.unmount();
+  }
+ });
+ it('keyboard and pointer sources preserve remaining propulsion and ignore duplicate presses',async()=>{
+  const t=setup();
+  act(()=>{t.result.current.press('w','key:w');t.result.current.press('w','pointer:1');t.result.current.press('a','pointer:2');});await flush();
+  expect(t.calls.at(-1)).toMatchObject({command:'FORWARD',steering:'LEFT'});
+  act(()=>t.result.current.release('key:w'));await flush();expect(t.calls.at(-1)?.command).toBe('FORWARD');
+  act(()=>{t.result.current.release('pointer:2');t.result.current.release('pointer:2');});await flush();
+  expect(t.calls.at(-1)).toMatchObject({command:'FORWARD',steering:'CENTER'});
+  act(()=>t.result.current.release('pointer:1'));await flush();expect(t.calls.at(-1)?.command).toBe('STOP');t.unmount();
  });
  it.each(['blur','pagehide','visibilitychange','Escape'])('%s stops and cannot restart on a repeated key',async event=>{
   const t=setup();fireEvent.keyDown(document,{key:'w'});await flush();

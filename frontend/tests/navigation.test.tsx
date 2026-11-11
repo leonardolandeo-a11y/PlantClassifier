@@ -1,0 +1,46 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { DashboardPage } from '../src/pages/DashboardPage';
+import { sensorsApi } from '../src/api/sensorsApi';
+import { httpClient } from '../src/api/httpClient';
+import { movementApi } from '../src/api/movementApi';
+import type { SensorData } from '../src/types/sensor';
+const reading: SensorData = { id: 1, temperature: 25, humidity: 60, ph: 6.5, soilMoisture: 45, soilStatus: 'calibrated', capturedAt: null, simulated: true, prediction: 'melón', predictionStatus: 'SUCCEEDED', predictionError: null, predictionModel: 'synthetic-five-crops-v2' };
+beforeEach(() => {
+  vi.spyOn(httpClient, 'initializeCsrf').mockResolvedValue({headerName: 'X-CSRF-TOKEN', token: 'test'});
+  vi.spyOn(sensorsApi, 'latest').mockResolvedValue(reading);
+  vi.spyOn(httpClient, 'request').mockResolvedValue({angle: 100, state: 'holding', epoch: 1, deviceTimeMs: 0} as never);
+});
+afterEach(() => vi.restoreAllMocks());
+it('navigates between separate views and retains a new capture and its result', async () => {
+  vi.spyOn(sensorsApi, 'capture').mockResolvedValue({...reading, temperature: 28, prediction: 'tomate'});
+  render(<DashboardPage />);
+  expect(screen.getByRole('button', {name: 'Toma de datos'})).toHaveAttribute('aria-current', 'page');
+  await screen.findByText('25.0');
+  fireEvent.click(screen.getByRole('button', {name: 'Capturar datos'}));
+  await screen.findByText('28.0');
+  fireEvent.click(screen.getByRole('button', {name: 'Respuesta de datos'}));
+  expect(screen.getByRole('heading', {name: 'Tomate'})).toBeInTheDocument();
+  expect(screen.getByText('28.0 °C')).toBeInTheDocument();
+  expect(screen.queryByRole('region', {name: 'Servo de sensores'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Movimiento'}));
+  expect(screen.getByRole('button', {name: /STOP/})).toBeInTheDocument();
+  expect(screen.queryByRole('heading', {name: 'Tomate'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Toma de datos'}));
+  expect(screen.getByText('28.0')).toBeInTheDocument();
+  expect(sensorsApi.latest).toHaveBeenCalledTimes(1);
+});
+it('leaving movement sends STOP and removes its keyboard control', async () => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  vi.spyOn(movementApi, 'acquire').mockResolvedValue({sessionId: 'a'.repeat(32), protocolVersion: 2});
+  const send = vi.spyOn(movementApi, 'send').mockImplementation(async request => ({...request, status: 'OK', simulated: true, protocolVersion: 2}));
+  render(<DashboardPage />);
+  fireEvent.click(screen.getByRole('button', {name: 'Movimiento'}));
+  await act(async () => fireEvent.keyDown(document, {key: 'w'}));
+  await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({command: 'FORWARD'})));
+  fireEvent.click(screen.getByRole('button', {name: 'Respuesta de datos'}));
+  await waitFor(() => expect(send).toHaveBeenLastCalledWith(expect.objectContaining({command: 'STOP'})));
+  const count = send.mock.calls.length;
+  await act(async () => fireEvent.keyDown(document, {key: 'w'}));
+  expect(send).toHaveBeenCalledTimes(count);
+});

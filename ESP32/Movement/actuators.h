@@ -9,6 +9,7 @@
 Servo steeringServo;
 #endif
 bool servoOK = false;
+int servoChannel = -1;
 bool pwmOK = false;
 bool lastPWMWriteOK = false;
 int currentAngle = SERVO_CENTER;
@@ -102,12 +103,22 @@ void setupHardware() {
   // Keep distinct timers: servo at 50 Hz, motor at 5 kHz.
   ESP32PWM::allocateTimer(0);
   steeringServo.setPeriodHertz(50);
-  steeringServo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
+  servoChannel = steeringServo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US);
   servoOK = steeringServo.attached();
   if (servoOK) servoMove(SERVO_CENTER);
   pwmOK = ledcAttachChannel(PWMA, PWM_FREQUENCY, PWM_RESOLUTION, MOTOR_PWM_CHANNEL);
   motorStop();
-  Serial.printf("[INIT] SERVO attached=%d PWM ready=%d STBY=%d\n", servoOK, pwmOK, digitalRead(STBY));
+  Serial.printf("[INIT] SERVO attached=%d channel=%d PWM ready=%d STBY=%d\n", servoOK, servoChannel, pwmOK, digitalRead(STBY));
   // No drive permitted if either initialization failed. No automatic fault recovery.
 #endif
+}
+
+// Complete logical state: zero propulsion never inherits an earlier motor command.
+bool applyMovement(int direction, int speed, int angle) {
+#if !SIMULATION_MODE
+  if (!servoOK || (direction != 0 && !pwmOK)) { robotStop(); return false; }
+#endif
+  if (!motorDrive(direction, speed)) { robotStop(); return false; }
+  servoMove(angle);
+  return true;
 }

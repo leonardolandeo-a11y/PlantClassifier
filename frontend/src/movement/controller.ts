@@ -1,5 +1,17 @@
 export type Command = "FORWARD" | "BACKWARD" | "LEFT" | "RIGHT" | "CENTER" | "STOP";
+export type Steering = "LEFT" | "CENTER" | "RIGHT";
+export type Intent = { command: Command; steering: Steering };
+export function intent(keys: Iterable<string>): Intent {
+    const held = [...keys];
+    const propulsion = held.filter(k => k === "w" || k === "s").at(-1);
+    const turn = held.filter(k => k === "a" || k === "d").at(-1);
+    const steering = turn === "a" ? "LEFT" : turn === "d" ? "RIGHT" : "CENTER";
+    return { command: propulsion === "w" ? "FORWARD" : propulsion === "s" ? "BACKWARD" : turn ? steering : "STOP", steering };
+}
+const powered = (command: Command) => command === "FORWARD" || command === "BACKWARD";
 export interface Acknowledgement {
+    steering?: Steering;
+    protocolVersion?: number;
     status: "OK";
     command: Command;
     speed: number;
@@ -7,9 +19,9 @@ export interface Acknowledgement {
     sessionId: string;
     sequence: number;
 }
-export interface MovementRequest { command: Command; speed: number; sessionId: string; sequence: number; }
+export interface MovementRequest { steering?: Steering; command: Command; speed: number; sessionId: string; sequence: number; }
 export interface Transport {
-    acquire(): Promise<{sessionId: string}>;
+    acquire(): Promise<{sessionId: string; protocolVersion?: number}>;
     send(request: MovementRequest): Promise<Acknowledgement>;
 }
 const directions: Record<string, Command> = { w: "FORWARD", a: "LEFT", s: "BACKWARD", d: "RIGHT" };
@@ -19,9 +31,9 @@ export class KeyboardState {
     press(key: string): void { if (key in directions) this.pressedKeys.add(key); }
     release(key: string): void { this.pressedKeys.delete(key); }
     clear(): void { this.pressedKeys.clear(); }
+    intent(): Intent { return intent(this.pressedKeys); }
     command(): Command {
-        // Last pressed key wins; releasing it resumes the last remaining held direction.
-        return directions[Array.from(this.pressedKeys).at(-1) ?? ""] ?? "STOP";
+        return this.intent().command;
     }
 }
 
@@ -33,8 +45,10 @@ export class MovementControl {
     readonly diagnostics = { acquisitionMs: 0, movementMs: 0, stopMs: 0,
         heartbeatGapMs: 0, maxHeartbeatGapMs: 0, failures: 0 };
     private lastSentAt: number | null = null;
+    private lastSubmitted = "STOP";
     private disposed = false;
     private session: string | null = null;
+    private protocolVersion: number | undefined;
     private sequence = 0;
     private generation = 0;
     private fault: string | null = null;
@@ -42,6 +56,7 @@ export class MovementControl {
     private stopping = false;
     private inFlight: MovementRequest | null = null;
     private desired: Command = "STOP";
+    private steering: Steering | undefined;
     private timer: ReturnType<typeof setTimeout> | undefined;
     constructor(private transport: Transport, private status: (message: string) => void,
                 private failed: () => void) {}
@@ -56,10 +71,13 @@ export class MovementControl {
 
     dispose(): void { this.disposed = true; this.stop(); }
 
-    set(command: Command): void {
+    set(command: Command, steering?: Steering): void {
         if (this.disposed) return;
         if (command === "STOP") { this.stop(); return; }
+        // Zero propulsion overtakes any pending powered request and invalidates its epoch.
+        if (!powered(command) && (powered(this.desired) || (this.inFlight && powered(this.inFlight.command)))) this.stop();
         this.desired = command;
+        this.steering = steering;
         this.advance();
     }
     private advance(): void {
@@ -80,6 +98,7 @@ export class MovementControl {
             if (!/^[0-9a-f]{32}$/.test(session.sessionId)) throw new Error("Invalid control session");
             // A released key can never use this epoch, even if another key was pressed meanwhile.
             this.session = session.sessionId;
+            this.protocolVersion = session.protocolVersion;
             this.sequence = 0;
             if (generation !== this.generation || this.desired === "STOP") {
                 await this.closeSession();
@@ -90,6 +109,7 @@ export class MovementControl {
     stop(): void {
         clearTimeout(this.timer);
         this.desired = "STOP";
+        this.lastSubmitted = "STOP";
         this.generation++;
         this.inFlight = null;
         if (this.session) void this.closeSession();
@@ -127,14 +147,18 @@ export class MovementControl {
         }
         if (!ack || ack.status !== "OK" || ack.sessionId !== request.sessionId ||
             ack.sequence !== request.sequence || ack.command !== request.command ||
+            (request.steering !== undefined && (ack.steering !== request.steering || ack.protocolVersion !== 2)) ||
             ack.speed !== request.speed || typeof ack.simulated !== "boolean")
             throw new Error("Invalid device acknowledgement");
         return ack;
     }
     private async pump(): Promise<void> {
         if (this.inFlight || !this.session || this.desired === "STOP") return;
+        if (this.steering !== undefined && this.protocolVersion !== 2) {
+            this.fail(new Error("Combined control requires backend and firmware protocol v2")); return;
+        }
         const generation = this.generation;
-        const request: MovementRequest = {command: this.desired, speed: this.desired === "FORWARD" || this.desired === "BACKWARD" ? 150 : 0, sessionId: this.session, sequence: ++this.sequence};
+        const request: MovementRequest = {command: this.desired, steering: this.steering, speed: this.desired === "FORWARD" || this.desired === "BACKWARD" ? 150 : 0, sessionId: this.session, sequence: ++this.sequence};
         const started = performance.now();
         if (this.lastSentAt !== null) {
             this.diagnostics.heartbeatGapMs = started - this.lastSentAt;
@@ -142,11 +166,16 @@ export class MovementControl {
         }
         this.lastSentAt = started;
         this.inFlight = request;
+        const submitted = `${request.command} · steering ${request.steering ?? "legacy"}`;
+        if (submitted !== this.lastSubmitted) {
+            this.lastSubmitted = submitted;
+            this.status(`${submitted} submitted — awaiting device acknowledgement`);
+        }
         try {
             const ack = await this.send(request);
             if (generation !== this.generation) return;
             const labels: Record<Command, string> = {FORWARD: "Moving forward", BACKWARD: "Moving backward", LEFT: "Turning left", RIGHT: "Turning right", CENTER: "Steering centered", STOP: "Stopped"};
-            this.status(`${labels[ack.command]} — ${ack.command} accepted by ESP32${ack.simulated ? " (simulated)" : " (commanded; no motion feedback)"}`);
+            this.status(`${labels[ack.command]}${ack.steering ? " · steering " + ack.steering : ""} — ${ack.command} accepted by ESP32${ack.simulated ? " (simulated)" : " (commanded; no motion feedback)"}`);
         } catch (error) {
             // Only obsolete protocol rejections are expected when priority STOP closes the epoch.
             // Network and invalid-ack failures remain visible, including on obsolete requests.
@@ -155,7 +184,7 @@ export class MovementControl {
             if (this.inFlight === request) {
                 this.inFlight = null;
                 if (generation === this.generation && this.session) {
-                    if (this.desired !== request.command) this.advance();
+                    if (this.desired !== request.command || this.steering !== request.steering) this.advance();
                     // Target start-to-start cadence, with one request in flight and no catch-up queue.
                     else this.timer = setTimeout(() => void this.pump(), Math.max(0, 250 - (performance.now() - started)));
                 }

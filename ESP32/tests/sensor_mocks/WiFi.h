@@ -5,6 +5,7 @@
 #include <cassert>
 using String = std::string;
 constexpr int WL_CONNECTED=1, WIFI_STA=1, ADC_11db=3, INPUT=0;
+inline int wifiStatus = WL_CONNECTED;
 inline unsigned long mockTime=3000;
 inline int adcCalls=0, adcValue=2048;
 inline unsigned long millis() { return mockTime; }
@@ -18,6 +19,6 @@ inline MockSerial Serial;
 struct MockIP { String toString() { return "127.0.0.1"; } };
 struct MockWiFi {
  void mode(int) {} void setAutoReconnect(bool) {} void begin(const char*,const char*) {}
- int status() { return WL_CONNECTED; } MockIP localIP() { return {}; } void reconnect() {}
+ int status() { return wifiStatus; } MockIP localIP() { return {}; } void reconnect() {}
 };
 inline MockWiFi WiFi;

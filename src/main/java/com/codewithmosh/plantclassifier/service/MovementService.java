@@ -10,7 +10,7 @@ import java.util.Objects;
 
 @Service
 public class MovementService {
-    public record ControlSession(String sessionId, long deviceTimeMs) {}
+    public record ControlSession(String sessionId, long deviceTimeMs, long protocolVersion) {}
     private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(MovementService.class);
     private final RestClient client;
@@ -28,6 +28,7 @@ public class MovementService {
                     (System.nanoTime() - started) / 1_000_000.0);
         }
     }
+    private boolean combinedSupported;
     private ControlSession active;
     private String owner;
     private long originNanos;
@@ -40,11 +41,13 @@ public class MovementService {
     public synchronized ControlSession acquire(String owner) {
         active = null;
         var json = timedRead("acquire", client.post().uri("/control-session"));
-        var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"));
+        var session = new ControlSession(DeviceResponse.text(json, "sessionId"), DeviceResponse.integer(json, "deviceTimeMs"),
+                json.has("protocolVersion") ? DeviceResponse.integer(json, "protocolVersion") : 1);
         if (!session.sessionId().matches("[0-9a-f]{32}")
                 || session.deviceTimeMs() < 0 || session.deviceTimeMs() > 0xffffffffL) {
             throw new SystemFailure(502, "device-response", "Invalid controller session response");
         }
+        this.combinedSupported = session.protocolVersion() == 2;
         this.active = session;
         this.owner = owner;
         this.originNanos = System.nanoTime(); // Conservative: response transit consumes device lifetime.
@@ -74,6 +77,9 @@ public class MovementService {
                     || !active.sessionId().equals(request.sessionId())) {
                 throw new SystemFailure(409, "controller-session", "Acquire control before sending commands");
             }
+            if (request.steering() != null && !request.command().equals("STOP") && !combinedSupported) {
+                throw new SystemFailure(409, "protocol-version", "Firmware protocol v2 required for combined control");
+            }
             if (request.sequence() <= sequence) {
                 throw new SystemFailure(409, "stale-command", "Stale or duplicate command rejected");
             }
@@ -89,9 +95,12 @@ public class MovementService {
             if (request.command().equals("STOP")) active = null;
         }
         // No network lock: STOP can overtake an in-flight command; firmware enforces epoch + sequence.
-        byte[] payload = JSON.writeValueAsBytes(Map.of(
+        var fields = new java.util.HashMap<String, Object>(Map.of(
                 "command", request.command(), "speed", request.speed(), "sessionId", request.sessionId(),
                 "sequence", request.sequence(), "deadlineMs", deadline));
+        if (request.steering() != null) fields.put("steering", request.steering());
+        byte[] payload = JSON.writeValueAsBytes(fields);
+        LOG.debug("Movement submitted command={} steering={} speed={} sequence={}", request.command(), request.steering(), request.speed(), request.sequence());
         // ESP32 WebServer expects a bounded request body with Content-Length, not chunked streaming.
         var json = timedRead(request.command(), client.post().uri("/movement")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -100,11 +109,16 @@ public class MovementService {
         if (speed < 0 || speed > 255) throw DeviceResponse.invalid();
         var ack = new MovementAck(DeviceResponse.text(json, "status"), DeviceResponse.text(json, "command"),
                 (int) speed, DeviceResponse.bool(json, "simulated"), DeviceResponse.text(json, "sessionId"),
-                DeviceResponse.integer(json, "sequence"));
+                DeviceResponse.integer(json, "sequence"),
+                request.steering() == null ? null : DeviceResponse.text(json, "steering"),
+                request.steering() == null ? null : DeviceResponse.integer(json, "protocolVersion"));
         if (!"OK".equals(ack.status()) || !request.command().equals(ack.command())
+                || (request.steering() != null && (!request.steering().equals(ack.steering()) || !Long.valueOf(2).equals(ack.protocolVersion())))
+                || ack.speed() != ((request.command().equals("FORWARD") || request.command().equals("BACKWARD")) ? request.speed() : 0)
                 || !request.sessionId().equals(ack.sessionId()) || !request.sequence().equals(ack.sequence())) {
             throw new SystemFailure(502, "device-response", "Invalid device acknowledgement");
         }
+        LOG.debug("Movement accepted command={} steering={} speed={} protocol={}", ack.command(), ack.steering(), ack.speed(), ack.protocolVersion());
         return ack;
     }
 }

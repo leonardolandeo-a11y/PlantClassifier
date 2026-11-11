@@ -24,7 +24,7 @@ struct SerialMock { void println(const char*) {} template<class... T> void print
 struct ESP32PWM { static void allocateTimer(int t) { assert(t==0 && pins[32]==0); } };
 struct Servo {
   void setPeriodHertz(int hz) { assert(hz==50); }
-  void attach(int pin,int lo,int hi) { assert(pin==22 && lo==500 && hi==2400 && pins[32]==0); }
+  int attach(int pin,int lo,int hi) { assert(pin==22 && lo==500 && hi==2400 && pins[32]==0); return 0; }
   bool attached() { return servoAttachOK; }
   void write(int a) { angle=a; }
 };

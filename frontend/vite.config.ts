@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: '127.0.0.1', port: 5173, strictPort: true,
-    proxy: Object.fromEntries(['/csrf', '/sensors', '/movement'].map(path => [path, { target: backend }])),
+    proxy: Object.fromEntries(['/csrf', '/sensors', '/movement', '/sensor-servo'].map(path => [path, { target: backend }])),
   },
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: false },
   test: { environment: 'jsdom', setupFiles: ['tests/setup.ts'], include: ['tests/**/*.test.{ts,tsx,js}'], restoreMocks: true },

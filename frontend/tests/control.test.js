@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import {KeyboardState, MovementControl, ControlRejected} from '../src/movement/controller.ts';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,5));
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const ack=r=>({...r,status:'OK',simulated:true});
+const ack=r=>({...r,status:'OK',simulated:true,protocolVersion:2});
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 function setup(overrides={}) {
     const calls=[],messages=[];let acquisitions=0,failures=0;
-    const control=new MovementControl({acquire:async()=>({sessionId:(++acquisitions).toString(16).padStart(32,'0')}),send:async r=>{calls.push(r);return ack(r);},...overrides},m=>messages.push(m),()=>failures++);
+    const control=new MovementControl({acquire:async()=>({protocolVersion:2,sessionId:(++acquisitions).toString(16).padStart(32,'0')}),send:async r=>{calls.push(r);return ack(r);},...overrides},m=>messages.push(m),()=>failures++);
     return {control,calls,messages,get acquisitions(){return acquisitions;},get failures(){return failures;}};
 }
 test('automatic acquisition for every fresh WASD action, normal release and monotonic sequence',async()=>{
@@ -58,7 +58,7 @@ test('held direction sends watchdog heartbeats for several seconds',async()=>{
 });
 test('direction priority, duplicate press, release remaining key and rapid alternating actions',async()=>{
     const t=setup(),keys=new KeyboardState();
-    keys.press('w');keys.press('a');keys.press('w');assert.equal(keys.command(),'LEFT');
+    keys.press('w');keys.press('a');keys.press('w');assert.equal(keys.command(),'FORWARD');assert.equal(keys.intent().steering,'LEFT');
     t.control.set(keys.command());await tick();keys.release('a');t.control.set(keys.command());await tick();
     assert.equal(t.calls.at(-1).command,'FORWARD');
     keys.release('w');t.control.stop();await tick();
@@ -99,9 +99,9 @@ test('emergency stop / focus cancellation clears latest queued direction',async(
 });
 test('one normal request at a time; queued directions collapse to latest intent',async()=>{
     const pending=deferred(),calls=[];const t=setup({send:r=>{calls.push(r);return calls.length===1?pending.promise:Promise.resolve(ack(r));}});
-    t.control.set('FORWARD');await tick();t.control.set('LEFT');t.control.set('RIGHT');
+    t.control.set('FORWARD');await tick();t.control.set('FORWARD','LEFT');t.control.set('FORWARD','RIGHT');
     assert.equal(calls.length,1);pending.resolve(ack(calls[0]));await tick();
-    assert.deepEqual(calls.map(r=>r.command),['FORWARD','RIGHT']);t.control.stop();await tick();
+    assert.deepEqual(calls.map(r=>r.command),['FORWARD','FORWARD']);assert.equal(calls[1].steering,'RIGHT');t.control.stop();await tick();
 });
 test('STOP is never reported confirmed before its matching acknowledgement',async()=>{
     const pending=deferred();const t=setup({send:r=>r.command==='STOP'?pending.promise:Promise.resolve(ack(r))});
@@ -115,7 +115,7 @@ test('W -> A -> D -> S during delayed FORWARD sends only latest BACKWARD immedia
     const pending=deferred(),calls=[];
     const t=setup({send:r=>{calls.push(r);return calls.length===1?pending.promise:Promise.resolve(ack(r));}});
     t.control.set('FORWARD');await tick();
-    t.control.set('LEFT');t.control.set('RIGHT');t.control.set('BACKWARD');
+    t.control.set('FORWARD','LEFT');t.control.set('FORWARD','RIGHT');t.control.set('BACKWARD','RIGHT');
     assert.equal(calls.length,1);
     pending.resolve(ack(calls[0]));await tick();
     assert.deepEqual(calls.map(r=>r.command),['FORWARD','BACKWARD']);
@@ -124,9 +124,9 @@ test('W -> A -> D -> S during delayed FORWARD sends only latest BACKWARD immedia
 
 test('new direction bypasses scheduled heartbeat, STOP cancels it',async()=>{
     const t=setup();t.control.set('FORWARD');await tick();
-    t.control.set('LEFT');await tick();assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT']);
+    t.control.set('FORWARD','LEFT');await tick();assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','FORWARD']);
     t.control.stop();await tick();await delay(300);
-    assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','LEFT','STOP']);
+    assert.deepEqual(t.calls.map(r=>r.command),['FORWARD','FORWARD','STOP']);
 });
 
 for (const command of ['FORWARD', 'BACKWARD']) {
@@ -159,3 +159,57 @@ test('late heartbeat response never creates a catch-up burst or resumes after ST
         assert.deepEqual(calls.map(r=>r.command),['BACKWARD','STOP']);
     } finally { t.control.dispose(); vi.useRealTimers(); }
 });
+
+for (const [keys,command,steering] of [
+    ['w','FORWARD','CENTER'],['s','BACKWARD','CENTER'],['a','LEFT','LEFT'],['d','RIGHT','RIGHT'],
+    ['wa','FORWARD','LEFT'],['wd','FORWARD','RIGHT'],['sa','BACKWARD','LEFT'],['sd','BACKWARD','RIGHT'],
+    ['aw','FORWARD','LEFT'],['ds','BACKWARD','RIGHT'],['ws','BACKWARD','CENTER'],['sw','FORWARD','CENTER'],
+    ['ad','RIGHT','RIGHT'],['da','LEFT','LEFT'],
+]) test(`combined intent ${keys}`,async()=>{
+    const t=setup(),state=new KeyboardState();
+    for(const key of keys) state.press(key);
+    assert.deepEqual(state.intent(),{command,steering});
+    t.control.set(command,steering);await tick();
+    assert.equal(t.calls.at(-1).command,command);assert.equal(t.calls.at(-1).steering,steering);
+    t.control.stop();await tick();
+});
+test('opposite keys: last within each axis wins; repeats do not reorder; release restores held key',()=>{
+    const keys=new KeyboardState();for(const key of 'wsad')keys.press(key);
+    keys.press('w');keys.press('a');assert.deepEqual(keys.intent(),{command:'BACKWARD',steering:'RIGHT'});
+    keys.release('s');keys.release('d');assert.deepEqual(keys.intent(),{command:'FORWARD',steering:'LEFT'});
+    keys.release('w');assert.deepEqual(keys.intent(),{command:'LEFT',steering:'LEFT'});
+    keys.release('a');assert.deepEqual(keys.intent(),{command:'STOP',steering:'CENTER'});
+});
+for(const [command,turn] of [['FORWARD','LEFT'],['BACKWARD','RIGHT']]) {
+    test(`${command}: steering release preserves drive and combined heartbeats`,async()=>{
+        vi.useFakeTimers();const t=setup();
+        try {
+            t.control.set(command,turn);await vi.advanceTimersByTimeAsync(1000);
+            assert.equal(t.calls.length,5);assert.ok(t.calls.every(r=>r.command===command && r.steering===turn));
+            t.control.set(command,'CENTER');await vi.advanceTimersByTimeAsync(0);
+            assert.equal(t.calls.at(-1).steering,'CENTER');assert.equal(t.acquisitions,1);
+            t.control.stop();await vi.advanceTimersByTimeAsync(0);
+        } finally {t.control.dispose();vi.useRealTimers();}
+    });
+    test(`${command}: release propulsion overtakes pending HTTP; retained turn waits for STOP`,async()=>{
+        const movement=deferred(),stop=deferred(),calls=[];
+        const t=setup({send:r=>{calls.push(r);return calls.length===1?movement.promise:r.command==='STOP'?stop.promise:Promise.resolve(ack(r));}});
+        t.control.set(command,turn);await tick();t.control.set(turn,turn);
+        assert.deepEqual(calls.map(r=>r.command),[command,'STOP']);assert.equal(t.acquisitions,1);
+        stop.resolve(ack(calls[1]));await tick();
+        assert.deepEqual(calls.map(r=>r.command),[command,'STOP',turn]);assert.equal(calls[2].speed,0);
+        assert.notEqual(calls[0].sessionId,calls[2].sessionId);
+        movement.resolve(ack(calls[0]));await tick();assert.match(t.messages.at(-1),new RegExp(turn));
+        t.control.stop();await tick();
+    });
+}
+test('legacy backend/firmware capability is rejected before a combined command is sent',async()=>{
+    const t=setup({acquire:async()=>({sessionId:'a'.repeat(32)})});
+    t.control.set('FORWARD','LEFT');await tick();assert.deepEqual(t.calls.map(r=>r.command),['STOP']);
+    assert.equal(t.failures,1);assert.match(t.messages.at(-1),/protocol v2/);
+});
+for(const wrong of [{steering:'CENTER'},{protocolVersion:1},{steering:undefined}])
+ test(`combined ACK mismatch ${JSON.stringify(wrong)} cancels`,async()=>{
+    const t=setup({send:async r=>r.command==='STOP'?ack(r):({...ack(r),...wrong})});
+    t.control.set('BACKWARD','RIGHT');await tick();assert.equal(t.failures,1);assert.equal(t.control.state,'ERROR');
+ });
