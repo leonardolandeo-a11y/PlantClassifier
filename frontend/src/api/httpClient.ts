@@ -13,6 +13,18 @@ export class HttpClient {
       }).catch(error => { this.csrf = undefined; throw error; });
   }
   async request<T>(url: string, options: { mutation?: boolean; body?: unknown; signal?: AbortSignal } = {}): Promise<T | null> {
+    if (!url.startsWith('/sensor-servo')) return this.perform<T>(url, options);
+    const operation = url.endsWith('/session') ? 'acquire' : (options.body as { command?: string })?.command ?? 'status';
+    const name = `servo:${operation}:ack`;
+    const start = performance.now();
+    try { return await this.perform<T>(url, options); }
+    finally {
+      // Keep only the latest sample per operation; inspect via browser Performance API.
+      performance.clearMeasures(name);
+      performance.measure(name, { start, end: performance.now() });
+    }
+  }
+  private async perform<T>(url: string, options: { mutation?: boolean; body?: unknown; signal?: AbortSignal }): Promise<T | null> {
     const { mutation = false, body, signal } = options;
     const headers: Record<string, string> = {};
     if (mutation) {

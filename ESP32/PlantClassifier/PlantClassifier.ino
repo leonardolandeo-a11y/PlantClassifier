@@ -27,15 +27,13 @@ void captureData() {
   if (!authorized()) return;
   unsigned long now = millis();
   if (!sampled || now - lastSample >= SENSOR_INTERVAL_MS) {
+    // DHT11 is synchronous. Never start a fresh acquisition during servo control;
+    // retain fresh cached captures, otherwise report unavailable rather than stale data.
+    servoTick();
+    if (servoActive) { protocolError(503, "Capture deferred during servo control"); return; }
     sampled = true;
     lastSample = now;
     sampleValid = readSensors(dht, [](int pin) { return analogRead(pin); }, sample);
-    Serial.printf(
-      "[DHT11] Temperatura=%.1f Humedad=%.1f Valido=%s\n",
-      sample.temperature,
-      sample.humidity,
-      sampleValid ? "SI" : "NO"
-  );
   }
   // A failed sample remains an error throughout the sampling interval.
   if (!sampleValid) { protocolError(503, "DHT11 read failed or outside rated range"); return; }
@@ -77,6 +75,7 @@ void setup() {
   pinMode(SOIL_PIN, INPUT);
   analogSetPinAttenuation(SOIL_PIN, ADC_11db);
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   unsigned long start = millis();
@@ -103,20 +102,6 @@ void loop() {
     WiFi.reconnect();
   }
 
+  servoTick(); // Enforce watchdog/interpolation immediately after synchronous HTTP work.
   delay(1);
-  static unsigned long lastSoilDebug = 0;
-
-  if (millis() - lastSoilDebug >= 2500) {
-      lastSoilDebug = millis();
-
-      Serial.print("SOIL SAMPLES:");
-
-      for (int i = 0; i < 8; i++) {
-          int raw = analogRead(SOIL_PIN);
-          Serial.print(" ");
-          Serial.print(raw);
-      }
-
-      Serial.println();
-  }
 }

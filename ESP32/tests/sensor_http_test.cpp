@@ -2,6 +2,7 @@
 #include "PlantClassifier.ino"
 int main() {
  setup();
+ assert(!WiFi.sleep);
  assert(dht.initialized && server.routes.size()==5);
  server.request("/capture"); assert(server.status==401 && dht.reads==0);
  server.request("/status"); assert(server.status==401);
@@ -15,6 +16,12 @@ int main() {
    server.input.clear(); serializeJson(request, server.input); server.request("/servo", HTTP_POST);
  };
  sendServo("INCREASE",1,servoEpoch); assert(server.status==200);
+ server.request("/capture"); assert(server.status==503 && dht.reads==0);
+ // Expired packets cannot refresh control, even when HTTP delivery was delayed.
+ JsonDocument late; late["command"]="DECREASE"; late["sequence"]=2;
+ late["epoch"]=servoEpoch; late["deadlineMs"]=uint32_t(millis()-1);
+ server.input.clear(); serializeJson(late,server.input); server.request("/servo",HTTP_POST);
+ assert(server.status==409 && sensorDirection==1);
  mockTime+=15; servoTick(); assert(sensorAngle==102);
  sendServo("HOLD",2,servoEpoch); assert(server.status==200);
  sendServo("INCREASE",1,servoEpoch); assert(server.status==409);

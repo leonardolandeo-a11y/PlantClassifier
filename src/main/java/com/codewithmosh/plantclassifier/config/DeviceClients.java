@@ -25,7 +25,7 @@ public class DeviceClients {
             throw new IllegalArgumentException("Device timeouts must be positive");
         }
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
-                .connectTimeout(connect).followRedirects(HttpClient.Redirect.NEVER).build());
+                .version(HttpClient.Version.HTTP_1_1).connectTimeout(connect).followRedirects(HttpClient.Redirect.NEVER).build());
         factory.setReadTimeout(read);
         return RestClient.builder().baseUrl(baseUrl).requestFactory(factory)
                 .defaultHeader("X-Device-Token", token).build();
@@ -35,6 +35,12 @@ public class DeviceClients {
                        @Value("${esp32.connect-timeout}") Duration connect,
                        @Value("${esp32.read-timeout}") Duration read) {
         return client(url, token, connect, read);
+    }
+    // Dedicated budget: obsolete servo commands must fail before the 1 s watchdog.
+    // Capture requests retain their independent, longer sensor timeout.
+    @Bean("servoClient")
+    RestClient servo(@Value("${esp32.url}") String url, @Value("${device.token}") String token) {
+        return client(url, token, Duration.ofMillis(250), Duration.ofMillis(600));
     }
     @Bean("movementClient")
     RestClient movement(@Value("${movement.esp32.url}") String url, @Value("${device.token}") String token,

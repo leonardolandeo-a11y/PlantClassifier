@@ -18,6 +18,7 @@ struct MockSerial { template<class... Args> void printf(const char*, Args...) {}
 inline MockSerial Serial;
 struct MockIP { String toString() { return "127.0.0.1"; } };
 struct MockWiFi {
+ bool sleep = true; void setSleep(bool value) { sleep = value; }
  void mode(int) {} void setAutoReconnect(bool) {} void begin(const char*,const char*) {}
  int status() { return wifiStatus; } MockIP localIP() { return {}; } void reconnect() {}
 };

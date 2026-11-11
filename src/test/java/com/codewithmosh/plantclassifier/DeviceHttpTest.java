@@ -70,4 +70,55 @@ class DeviceHttpTest {
         assertEquals(token,receivedToken.get());
         assertNotNull(receivedLength.get()); assertTrue(Integer.parseInt(receivedLength.get()) > 0);
     }
+    @Test void servoBudgetBoundsSlowAck() {
+        server.createContext("/servo-session",exchange->{
+            try { Thread.sleep(4000); } catch(InterruptedException ex) { Thread.currentThread().interrupt(); }
+            byte[] body="{\"angle\":100,\"state\":\"holding\",\"epoch\":1,\"deviceTimeMs\":1000}".getBytes(StandardCharsets.UTF_8);
+            try { exchange.sendResponseHeaders(200,body.length); exchange.getResponseBody().write(body); }
+            finally { exchange.close(); }
+        });
+        var baseline=new com.codewithmosh.plantclassifier.service.ServoService(
+            DeviceClients.client(url,token,Duration.ofMillis(250),Duration.ofSeconds(5)));
+        long baselineStart=System.nanoTime();
+        baseline.acquire("owner");
+        System.out.printf("Servo mock 4000 ms ACK: previous budget returns in %.1f ms%n",(System.nanoTime()-baselineStart)/1_000_000.0);
+        var service=new com.codewithmosh.plantclassifier.service.ServoService(
+            DeviceClients.client(url,token,Duration.ofMillis(250),Duration.ofMillis(600)));
+        long start=System.nanoTime();
+        assertTimeoutPreemptively(Duration.ofMillis(1200),()->
+            assertThrows(ResourceAccessException.class,()->service.acquire("owner")));
+        System.out.printf("Servo mock 4000 ms ACK: timeout in %.1f ms%n",(System.nanoTime()-start)/1_000_000.0);
+    }
+    @Test void servoHoldBypassesPendingCommandAndRejectsLateDelivery() throws Exception {
+        var active=new AtomicBoolean(true);
+        var arrived=new CountDownLatch(1);
+        var held=new CountDownLatch(1);
+        String reply="{\"angle\":100,\"state\":\"holding\",\"epoch\":1,\"deviceTimeMs\":1000}";
+        server.createContext("/servo-session",exchange->{
+            byte[] body=reply.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200,body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.createContext("/servo",exchange->{
+            assertEquals(token,exchange.getRequestHeaders().getFirst("X-Device-Token"));
+            var json=JsonMapper.builder().build().readTree(exchange.getRequestBody());
+            if(json.get("command").asString().equals("INCREASE")) {
+                arrived.countDown();
+                try { held.await(1,TimeUnit.SECONDS); } catch(InterruptedException ex) { Thread.currentThread().interrupt(); }
+                if(!active.get()) { exchange.sendResponseHeaders(409,-1); exchange.close(); return; }
+            } else { active.set(false); held.countDown(); }
+            byte[] body=reply.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200,body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        var service=new com.codewithmosh.plantclassifier.service.ServoService(
+            DeviceClients.client(url,token,Duration.ofMillis(250),Duration.ofMillis(600)));
+        service.acquire("owner");
+        var pending=CompletableFuture.runAsync(()->service.command(
+            new com.codewithmosh.plantclassifier.dto.ServoRequest("INCREASE",1L,1L),"owner"));
+        assertTrue(arrived.await(1,TimeUnit.SECONDS));
+        service.command(new com.codewithmosh.plantclassifier.dto.ServoRequest("HOLD",1L,2L),"owner");
+        assertInstanceOf(SystemFailure.class,assertThrows(ExecutionException.class,()->pending.get(1,TimeUnit.SECONDS)).getCause());
+        assertThrows(SystemFailure.class,()->service.command(
+            new com.codewithmosh.plantclassifier.dto.ServoRequest("DECREASE",1L,3L),"owner"));
+    }
+
 }

@@ -8,13 +8,18 @@ import java.util.Map;
 import java.util.Objects;
 @Service
 public class ServoService {
+    private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ServoService.class);
     private final RestClient client;
     private String owner;
     private long epoch, sequence, origin, deviceTime, lastCommand;
     private boolean active;
-    public ServoService(@Qualifier("sensorClient") RestClient client) { this.client = client; }
+    public ServoService(@Qualifier("servoClient") RestClient client) { this.client = client; }
     private ServoStatus read(RestClient.RequestHeadersSpec<?> request) {
-        var json = DeviceResponse.read(request);
+        long started = System.nanoTime();
+        tools.jackson.databind.JsonNode json;
+        try { json = DeviceResponse.read(request); }
+        finally { LOG.debug("Servo device round trip {} ms", (System.nanoTime() - started) / 1_000_000.0); }
         long angle = DeviceResponse.integer(json,"angle"), e = DeviceResponse.integer(json,"epoch"), time = DeviceResponse.integer(json,"deviceTimeMs");
         String state = DeviceResponse.text(json,"state");
         if (angle < 70 || angle > 130 || e < 0 || e > 0xffffffffL || time < 0 || time > 0xffffffffL ||
@@ -27,7 +32,9 @@ public class ServoService {
         long started = System.nanoTime();
         var result = read(client.post().uri("/servo-session"));
         this.owner = owner; epoch = result.epoch(); deviceTime = result.deviceTimeMs();
-        origin = lastCommand = started; sequence = 0; active = true;
+        // Anchor at receipt, not send: counting acquisition RTT twice could put
+        // deadlineMs > 1000 ms into the device's future and cause spurious 409s.
+        origin = System.nanoTime(); lastCommand = started; sequence = 0; active = true;
         return result;
     }
     public ServoStatus command(ServoRequest request, String owner) {
@@ -41,7 +48,7 @@ public class ServoService {
             deadline = (deviceTime + (now-origin)/1_000_000 + 750) & 0xffffffffL;
             if (request.command().equals("HOLD")) active = false;
         }
-        byte[] body = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsBytes(Map.of(
+        byte[] body = JSON.writeValueAsBytes(Map.of(
                 "command",request.command(),"epoch",request.epoch(),"sequence",request.sequence(),"deadlineMs",deadline));
         var result = read(client.post().uri("/servo").contentType(org.springframework.http.MediaType.APPLICATION_JSON).contentLength(body.length).body(body));
         if (result.epoch() != request.epoch()) throw DeviceResponse.invalid();

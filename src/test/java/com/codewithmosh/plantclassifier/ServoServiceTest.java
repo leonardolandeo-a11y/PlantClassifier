@@ -36,4 +36,23 @@ class ServoServiceTest {
         }
         server.verify();
     }
+    @Test void acquisitionLatencyIsNotAddedToDeviceDeadline() {
+        var builder=RestClient.builder().baseUrl("http://sensors.test");
+        var server=MockRestServiceServer.bindTo(builder).build();
+        String json="{\"angle\":100,\"state\":\"holding\",\"epoch\":1,\"deviceTimeMs\":1000}";
+        server.expect(requestTo("http://sensors.test/servo-session")).andRespond(request -> {
+            try { Thread.sleep(400); } catch(InterruptedException ex) { Thread.currentThread().interrupt(); }
+            return withSuccess(json,MediaType.APPLICATION_JSON).createResponse(request);
+        });
+        server.expect(requestTo("http://sensors.test/servo")).andExpect(request -> {
+            var body=((org.springframework.mock.http.client.MockClientHttpRequest)request).getBodyAsString();
+            long deadline=tools.jackson.databind.json.JsonMapper.builder().build().readTree(body).get("deadlineMs").longValue();
+            assertTrue(deadline >= 1750 && deadline < 2000, "Acquisition RTT must not shift deadline beyond device window");
+        }).andRespond(withSuccess(json,MediaType.APPLICATION_JSON));
+        var service=new ServoService(builder.build());
+        service.acquire("owner");
+        service.command(new ServoRequest("INCREASE",1L,1L),"owner");
+        server.verify();
+    }
+
 }
