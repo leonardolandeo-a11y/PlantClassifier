@@ -17,10 +17,10 @@ import java.util.concurrent.*;
 
 /** One connection, bounded pending requests, firmware ACKs only. Never queues offline commands. */
 @Component
-public class MqttDeviceTransport {
+public class MqttDeviceTransport implements AutoCloseable {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private record Presence(String connection, long seen) {}
-    private record Pending(String role, String connection, CompletableFuture<JsonNode> future) {}
+    private record Pending(String role, String connection, CompletableFuture<JsonNode> future, CompletableFuture<Void> published) {}
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(MqttDeviceTransport.class);
     private final Semaphore normalSlots = new Semaphore(48), safetySlots = new Semaphore(16);
     private final ConcurrentMap<String, Presence> presence = new ConcurrentHashMap<>();
@@ -29,22 +29,33 @@ public class MqttDeviceTransport {
         Thread t = new Thread(r, "mqtt-deadlines"); t.setDaemon(true); return t;
     });
     private final MqttAsyncClient client;
-    private final long timeoutMs;
+    private final long timeoutMs, safetyTimeoutMs, acquisitionTimeoutMs, statusTimeoutMs, captureTimeoutMs;
     private volatile boolean subscribed;
+    public MqttDeviceTransport(String transport, String url, String username, String password, Duration timeout) throws MqttException {
+        this(transport, url, username, password, timeout, timeout, timeout, timeout, Duration.ofSeconds(3));
+    }
+    @org.springframework.beans.factory.annotation.Autowired
     public MqttDeviceTransport(@Value("${device.transport:http}") String transport,
             @Value("${mqtt.url:tcp://mosquitto:1883}") String url,
             @Value("${mqtt.username:backend}") String username,
             @Value("${mqtt.password:}") String password,
-            @Value("${mqtt.ack-timeout:600ms}") Duration timeout) throws MqttException {
+            @Value("${mqtt.movement-timeout:${mqtt.ack-timeout:600ms}}") Duration timeout,
+            @Value("${mqtt.safety-timeout:600ms}") Duration safetyTimeout,
+            @Value("${mqtt.acquisition-timeout:600ms}") Duration acquisitionTimeout,
+            @Value("${mqtt.status-timeout:750ms}") Duration statusTimeout,
+            @Value("${mqtt.capture-timeout:3s}") Duration captureTimeout) throws MqttException {
         if (!Set.of("http", "mqtt").contains(transport)) throw new IllegalArgumentException("DEVICE_TRANSPORT must be http or mqtt");
-        timeoutMs = timeout.toMillis();
-        if (timeoutMs < 50 || timeoutMs > 750) throw new IllegalArgumentException("MQTT ACK budget must be 50..750 ms");
+        timeoutMs = budget(timeout, 750);
+        safetyTimeoutMs = budget(safetyTimeout, 750);
+        acquisitionTimeoutMs = budget(acquisitionTimeout, 750);
+        statusTimeoutMs = budget(statusTimeout, 1000);
+        captureTimeoutMs = budget(captureTimeout, 5000);
         if (transport.equals("http")) { client = null; return; }
         if (password.isBlank()) throw new IllegalArgumentException("Configure MQTT_PASSWORD");
         client = new MqttAsyncClient(url, "plant-backend-" + UUID.randomUUID(), new MemoryPersistence());
         client.setCallback(new MqttCallbackExtended() {
             public void connectComplete(boolean reconnect, String serverURI) {
-                subscribed = false; presence.clear();
+                subscribed = false; presence.clear(); failAll("broker-disconnected", "MQTT connection changed");
                 try {
                     client.subscribe(new String[]{"plant/v1/+/state", "plant/v1/+/ack"}, new int[]{0, 0}, null,
                         new IMqttActionListener() {
@@ -69,6 +80,18 @@ public class MqttDeviceTransport {
             catch (MqttException ignored) { /* State remains unavailable until subscribed. */ }
         }, 0, 3, TimeUnit.SECONDS);
     }
+    private static long budget(Duration value, long maximum) {
+        long ms = value.toMillis();
+        if (ms < 50 || ms > maximum) throw new IllegalArgumentException("MQTT budget must be 50.." + maximum + " ms");
+        return ms;
+    }
+    long timeoutFor(String path, boolean safety) {
+        if (safety) return safetyTimeoutMs;
+        if (path.equals("/capture")) return captureTimeoutMs;
+        if (path.equals("/control-session") || path.equals("/servo-session")) return acquisitionTimeoutMs;
+        if (path.equals("/status")) return statusTimeoutMs;
+        return timeoutMs;
+    }
     public boolean enabled() { return client != null; }
     void receive(String topic, MqttMessage message) {
         if (message.isRetained() || message.getPayload().length > 8192) return;
@@ -87,7 +110,9 @@ public class MqttDeviceTransport {
             } else if (parts[3].equals("ack")) {
                 String id = value.path("id").asString("");
                 var item = pending.get(id);
-                if (item != null && item.role.equals(role) && item.connection.equals(value.path("connectionId").asString("")))
+                Presence current = presence.get(role);
+                if (current != null && System.nanoTime() - current.seen <= 3_000_000_000L
+                        && item != null && current.connection.equals(item.connection) && item.role.equals(role) && item.connection.equals(value.path("connectionId").asString("")))
                     item.future.complete(value);
             }
         } catch (RuntimeException ignored) { /* Malformed or unrelated traffic cannot acknowledge a command. */ }
@@ -97,7 +122,13 @@ public class MqttDeviceTransport {
                 p.future.completeExceptionally(new SystemFailure(503, "device-disconnected", "ESP32 disconnected or restarted; acquire control again")));
     }
     private void failAll(String category, String message) {
-        pending.values().forEach(p -> p.future.completeExceptionally(new SystemFailure(503, category, message)));
+        pending.values().forEach(p -> {
+            var failure = new SystemFailure(503, category, message);
+            p.future.completeExceptionally(failure); p.published.completeExceptionally(failure);
+        });
+    }
+    static void releaseAfterSettlement(CompletableFuture<?> response, CompletableFuture<?> publication, Runnable release) {
+        CompletableFuture.allOf(response, publication).whenComplete((ignored, error) -> release.run());
     }
     public CompletableFuture<JsonNode> request(String role, String method, String path, byte[] body) {
         if (client == null || !client.isConnected() || !subscribed)
@@ -112,12 +143,15 @@ public class MqttDeviceTransport {
             return CompletableFuture.failedFuture(new SystemFailure(503, "mqtt-busy", "MQTT request capacity exceeded"));
         String id = UUID.randomUUID().toString();
         var result = new CompletableFuture<JsonNode>();
-        pending.put(id, new Pending(role, device.connection, result));
+        var published = new CompletableFuture<Void>();
+        pending.put(id, new Pending(role, device.connection, result, published));
+        // An ACK deadline does not remove a packet queued inside Paho. Retain its
+        // permit until publication settles too, bounding the library's outbound queue.
+        releaseAfterSettlement(result, published, () -> { pending.remove(id); slots.release(); });
         // CompletableFuture uses its own deadline scheduler; reconnect attempts cannot delay expiration.
-        result.orTimeout(timeoutMs, TimeUnit.MILLISECONDS);
+        result.orTimeout(timeoutFor(method.equals("GET") && path.equals("/servo") ? "/status" : path, safety), TimeUnit.MILLISECONDS);
         long started = System.nanoTime();
         result.whenComplete((ack, error) -> {
-            pending.remove(id); slots.release();
             LOG.debug("metric=mqtt-ack elapsedMs={} success={} role={}", (System.nanoTime()-started)/1_000_000.0, error == null, role);
         });
         try {
@@ -125,12 +159,13 @@ public class MqttDeviceTransport {
                     "method", method, "path", path, "body", body.length == 0 ? Map.of() : JSON.readTree(body)));
             client.publish("plant/v1/" + role + (safety ? "/urgent" : "/command"), payload, 0, false, null,
                     new IMqttActionListener() {
-                        public void onSuccess(IMqttToken token) {}
+                        public void onSuccess(IMqttToken token) { published.complete(null); }
                         public void onFailure(IMqttToken token, Throwable e) {
-                            result.completeExceptionally(new SystemFailure(503, "broker-disconnected", "MQTT publication failed"));
+                            var failure = new SystemFailure(503, "broker-disconnected", "MQTT publication failed");
+                            published.completeExceptionally(failure); result.completeExceptionally(failure);
                         }
                     });
-        } catch (Exception e) { result.completeExceptionally(e); }
+        } catch (Exception e) { published.completeExceptionally(e); result.completeExceptionally(e); }
         return result;
     }
     /** Compatibility boundary for existing services. Publication and correlation are asynchronous;

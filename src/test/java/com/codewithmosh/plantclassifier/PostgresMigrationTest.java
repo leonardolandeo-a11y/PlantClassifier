@@ -18,7 +18,7 @@ class PostgresMigrationTest {
     }
     @Test void initializesFreshPostgresDatabase() throws Exception {
         String schema="test_"+UUID.randomUUID().toString().replace("-","");
-        var result=flyway(schema).migrate(); assertEquals(6,result.migrationsExecuted);
+        var result=flyway(schema).migrate(); assertEquals(7,result.migrationsExecuted);
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,captured_at,simulated,prediction_status) VALUES(nextval('sensor_data_seq'),7,20,60,CURRENT_TIMESTAMP,true,'PENDING')");
@@ -32,7 +32,7 @@ class PostgresMigrationTest {
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status) VALUES(501,7,20,60,'PENDING')");
-            assertEquals(3,flyway(schema).migrate().migrationsExecuted);
+            assertEquals(4,flyway(schema).migrate().migrationsExecuted);
             try(var rows=statement.executeQuery("SELECT humidity,soil_moisture,soil_moisture_source FROM sensor_data WHERE id=501")) {
                 assertTrue(rows.next()); assertEquals(60,rows.getDouble(1)); assertNull(rows.getObject(2)); assertNull(rows.getObject(3));
             }
@@ -50,7 +50,7 @@ class PostgresMigrationTest {
         try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
             statement.execute("SET search_path TO "+schema);
             statement.execute("INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status,soil_moisture) VALUES(501,7,20,60,'PENDING',75)");
-            assertEquals(2,flyway(schema).migrate().migrationsExecuted);
+            assertEquals(3,flyway(schema).migrate().migrationsExecuted);
             try(var rows=statement.executeQuery("SELECT soil_moisture,soil_status,prediction_model FROM sensor_data WHERE id=501")) {
                 assertTrue(rows.next()); assertEquals(75,rows.getDouble(1)); assertNull(rows.getString(2)); assertNull(rows.getString(3));
             }
@@ -75,5 +75,48 @@ class PostgresMigrationTest {
             }
             try(var rows=statement.executeQuery("SELECT nextval('sensor_data_seq')")) { rows.next(); assertEquals(1001,rows.getLong(1)); }
         }
+    }
+    @Test void sampleIdentityRejectsDuplicatesButPreservesLegacyRows() throws Exception {
+        String schema="identity_"+UUID.randomUUID().toString().replace("-", "");
+        flyway(schema).migrate();
+        try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
+            statement.execute("SET search_path TO "+schema);
+            String insert="INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status,device_id,sample_id) VALUES(nextval('sensor_data_seq'),7,20,60,'PENDING',";
+            statement.execute(insert+"'sensor','boot-1')");
+            assertThrows(SQLException.class, () -> statement.execute(insert+"'sensor','boot-1')"));
+            statement.execute(insert+"'sensor','boot-2')");
+            statement.execute(insert+"NULL,NULL)"); statement.execute(insert+"NULL,NULL)");
+            assertThrows(SQLException.class, () -> statement.execute(insert+"'sensor',NULL)"));
+        }
+    }
+    @Test void concurrentDuplicateWaitsForCommitAndNeverCreatesTwoRows() throws Exception {
+        String schema="concurrent_"+UUID.randomUUID().toString().replace("-", "");
+        flyway(schema).migrate();
+        try(var first=DriverManager.getConnection(url,user,password);var insert=first.createStatement()) {
+            first.setAutoCommit(false); insert.execute("SET search_path TO "+schema);
+            String sql="INSERT INTO sensor_data(id,ph,temperature,humidity,prediction_status,device_id,sample_id) VALUES(nextval('sensor_data_seq'),7,20,60,'PENDING','sensor','boot-1')";
+            insert.execute(sql);
+            var competing=java.util.concurrent.CompletableFuture.supplyAsync(()->{
+                try(var second=DriverManager.getConnection(url,user,password);var statement=second.createStatement()) {
+                    statement.execute("SET search_path TO "+schema); statement.execute(sql); return "unexpected-success";
+                } catch(SQLException error) {return error.getSQLState();}
+            });
+            first.commit();
+            assertEquals("23505",competing.get(5,java.util.concurrent.TimeUnit.SECONDS));
+            try(var rows=insert.executeQuery("SELECT count(*) FROM sensor_data")) {rows.next();assertEquals(1,rows.getInt(1));}
+        }
+    }
+    @Test void failedMigrationRollsBackDdlAndPreservesV7(@org.junit.jupiter.api.io.TempDir java.nio.file.Path migration) throws Exception {
+        String schema="rollback_"+UUID.randomUUID().toString().replace("-", "");
+        flyway(schema).migrate();
+        java.nio.file.Files.writeString(migration.resolve("V8__deliberate_test_failure.sql"), "CREATE TABLE rollback_probe(id INT); INSERT INTO missing_table VALUES(1);");
+        var failing=Flyway.configure().dataSource(url,user,password).schemas(schema)
+                .locations("classpath:db/migration","filesystem:"+migration).load();
+        assertThrows(Exception.class,failing::migrate);
+        try(var connection=DriverManager.getConnection(url,user,password);var statement=connection.createStatement()) {
+            statement.execute("SET search_path TO "+schema);
+            try(var rows=statement.executeQuery("SELECT to_regclass('rollback_probe')")) {rows.next();assertNull(rows.getObject(1));}
+        }
+        assertEquals(0,flyway(schema).migrate().migrationsExecuted);
     }
 }

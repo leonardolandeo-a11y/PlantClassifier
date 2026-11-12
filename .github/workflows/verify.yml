@@ -30,9 +30,21 @@ jobs:
       - run: scripts/test-postgres.sh
       - name: Prepare ArduinoJson for firmware host tests
         run: |
-          git clone --depth 1 --branch v7.4.2 https://github.com/bblanchon/ArduinoJson.git "$RUNNER_TEMP/ArduinoJson"
+          git clone --depth 1 --branch v7.4.3 https://github.com/bblanchon/ArduinoJson.git "$RUNNER_TEMP/ArduinoJson"
           echo "ARDUINOJSON_INCLUDE=$RUNNER_TEMP/ArduinoJson/src" >> "$GITHUB_ENV"
       - run: scripts/test-firmware.sh
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Compile both ESP32 sketches (never upload)
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.3.11 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install 'ArduinoJson@7.4.3' 'ArduinoMqttClient@0.1.8' 'ESP32Servo@3.2.1' 'DHT sensor library@1.4.7' 'Adafruit Unified Sensor@1.1.15'
+          bash scripts/compile-firmware.sh
+      - run: pip install -r scripts/requirements-diagnostics.txt
+      - run: DIAGNOSTIC_PYTHON=python bash scripts/test-mqtt.sh
+      - run: bash scripts/test-mosquitto-config.sh
+      - run: npm ci --prefix mobile
+      - run: npm run typecheck --prefix mobile && npm test --prefix mobile && npm run export --prefix mobile
       - run: python scripts/test-simulator.py
       - run: pip install -r MLClassification/requirements.txt
       - name: Python syntax, imports, prediction and evaluation
@@ -44,10 +56,19 @@ jobs:
           python -m unittest discover -s MLClassification -p 'test_*.py'
       - run: python scripts/check-secrets.py
       - run: docker compose --env-file .env.example config --quiet
+      - name: Validate MQTT Compose without private credentials
+        run: MQTT_PASSWORD=isolated-validation-placeholder docker compose --env-file .env.example -f docker-compose.yaml -f docker-compose.mqtt.yaml config --quiet
       - run: docker build -t plantclassifier:ci .
       - name: End-to-end smoke with disposable PostgreSQL and fake ESP32
         run: PLANT_TEST_IMAGE=plantclassifier:ci python scripts/smoke-docker.py
-      - name: Browser integration with disposable PostgreSQL and simulated devices
+      - name: Repeat browser HTTP/MQTT and controlled failure recovery with isolated simulators
         run: |
           npx playwright install --with-deps chromium
-          CHROME_PATH="" PLANT_TEST_IMAGE=plantclassifier:ci python scripts/test-browser.py
+          CHROME_PATH="" DIAGNOSTIC_PYTHON=python PLANT_REPEAT_REPORT_DIR=/tmp/plant-browser-reports PLANT_TEST_IMAGE=plantclassifier:ci python scripts/test-browser-repeat.py
+      - name: Preserve isolated browser evidence (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-validation
+          path: /tmp/plant-browser-reports
+          if-no-files-found: ignore

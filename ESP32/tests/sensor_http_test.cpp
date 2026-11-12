@@ -33,9 +33,11 @@ int main() {
  sendServo("CENTER",2,servoEpoch);
  for(int i=0;i<15;i++) { mockTime+=15; servoTick(); }
  assert(sensorAngle==100);
- sendServo("INCREASE",3,servoEpoch); mockTime+=1001; servoTick();
+ sendServo("CENTER",3,servoEpoch);
+ assert(!sensorCentering && sensorDirection==0); // Renewal at target confirms completion.
+ sendServo("INCREASE",4,servoEpoch); mockTime+=1001; servoTick();
  assert(sensorAngle==100 && !servoActive);
- sendServo("INCREASE",4,servoEpoch); assert(server.status==409);
+ sendServo("INCREASE",5,servoEpoch); assert(server.status==409);
 
  server.request("/servo-session", HTTP_POST); sendServo("INCREASE",1,servoEpoch);
  wifiStatus=0; servoTick(); assert(!servoActive && sensorDirection==0); wifiStatus=WL_CONNECTED;
@@ -55,9 +57,12 @@ int main() {
  assert(doc["temperature"]==25 && doc["humidity"]==60 && doc["simulated"]==true);
  assert(doc["temperatureSource"]=="dht11" && doc["humiditySource"]=="dht11");
  assert(doc["phSource"]=="potentiometer" && fabs(doc["ph"].as<float>()-7)<.01);
+ String firstSampleId=doc["sampleId"].as<String>();
+ assert(firstSampleId.length()>32 && doc["deviceId"]=="sensor");
  mockTime+=1000; dht.temperature=NAN;
  server.request("/capture"); assert(server.status==200 && dht.reads==2);
  assert(!deserializeJson(doc,server.body)); assert(doc["sampleAgeMs"]==1000);
+ assert(doc["sampleId"].as<String>()==firstSampleId);
  mockTime+=1000;
  server.request("/capture"); assert(server.status==503 && dht.reads==4);
  assert(!deserializeJson(doc,server.body)); assert(doc["error"].is<const char*>());

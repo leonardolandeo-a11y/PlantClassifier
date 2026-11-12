@@ -42,3 +42,18 @@ Legacy measurements retain null `captured_at` and `simulated`, because neither f
 A valid capture whose prediction fails returns HTTP 200 with the saved measurement and explicit `FAILED` status. The dashboard shows partial success. If the initial save fails, return 503 and do not invoke ML. If the final save fails or the process crashes, the first row remains `PENDING`; the request returns an error rather than falsely claiming final persistence. Automatic retry/reclassification of pending rows is not implemented.
 
 Deploy backend and both sketches together: old movement clients lack session/sequence/deadline fields and will be rejected. Old sensor firmware lacks explicit simulation provenance and must be upgraded. Preserve the existing model. Updating the UI requires rebuilding its generated JS/CSS.
+
+## Identidad de captura (V7)
+
+V7 añade `device_id`, `sample_id` y `received_at`, sin alterar datos históricos.
+El firmware de sensores emite un nonce de arranque y una secuencia por adquisición:
+las respuestas de su caché conservan el mismo `sampleId`. Un índice único en
+`(device_id, sample_id)` impide duplicados, incluso entre procesos Spring.
+Una petición repetida devuelve la fila existente y su estado actual; no vuelve a
+inferir ni crea una captura. Firmware antiguo sin identidad sigue admitido, pero
+no permite deduplicación física fiable. `captured_at` es una estimación de recepción
+menos edad de muestra; no implica sincronización UTC del ESP32.
+
+La primera escritura precede a ML. `ml-not-completed` identifica un PENDING en curso
+o interrumpido; `soil-*` explica por qué no se pudo solicitar predicción. Un fallo de
+ML conserva la captura con FAILED/OUT_OF_DOMAIN. No borres la fila para reintentar.

@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-12",
+  "route": "JVM -> local Docker Mosquitto -> JVM simulated device -> ACK",
+  "operation": "read-only GET",
+  "n": 100,
+  "failures": 0,
+  "unit": "ms",
+  "p50": 0.449,
+  "p95": 0.771,
+  "p99": 3.414,
+  "max": 42.175,
+  "physical_hardware": false
+}

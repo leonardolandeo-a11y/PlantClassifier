@@ -25,8 +25,7 @@ Las credenciales nuevas de `.env` no cambian las de un PostgreSQL ya inicializad
 | `SESSION_COOKIE_SECURE` | `true` con HTTPS, `false` para la demostración HTTP local |
 
 Abre `http://127.0.0.1:18080` sin login. Solo se admite uso local y supervisado;
-cualquier usuario o proceso local puede controlar el robot. No expongas la aplicación
-a la LAN, Internet, túneles o proxies. Compose fija la publicación a `127.0.0.1`;
+cualquier usuario o proceso local puede controlar el robot. Para Android en una LAN de laboratorio supervisada, configura `APP_BIND_ADDRESS=0.0.0.0` explícitamente. No publiques en Internet. Compose usa `127.0.0.1` por defecto;
 `APP_PORT` permite conservar un puerto local existente. Las antiguas variables de operador
 no se utilizan; no es necesario editar `.env` ni `.env.lab`. La sesión HTTP anónima
 identifica al controlador y mantiene CSRF; no contiene el token privado del ESP32.
@@ -131,7 +130,7 @@ Instala Arduino CLI y estas versiones de las dependencias:
 ```bash
 arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core install esp32:esp32@3.3.11 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli lib install 'ArduinoJson@7.4.2' 'ESP32Servo@3.2.1' 'DHT sensor library@1.4.7' 'Adafruit Unified Sensor@1.1.15'
+arduino-cli lib install 'ArduinoJson@7.4.3' 'ArduinoMqttClient@0.1.8' 'ESP32Servo@3.2.1' 'DHT sensor library@1.4.7' 'Adafruit Unified Sensor@1.1.15'
 scripts/compile-firmware.sh
 ```
 
@@ -194,7 +193,7 @@ docker build -t plantclassifier:reliability .
 python3 scripts/smoke-docker.py
 ```
 
-`test-firmware.sh` requiere g++ y ArduinoJson 7.4.2 instalado como arriba, o
+`test-firmware.sh` requiere g++ y ArduinoJson 7.4.3 instalado como arriba, o
 `ARDUINOJSON_INCLUDE` apuntando a su directorio `src`. CI instala esa versión antes de
 compilar: no omite pruebas cuando falta la biblioteca. El script incluye secuencias,
 STOP, watchdog, actuadores con mocks, roles separados y el sketch de sensores con
@@ -208,8 +207,14 @@ implementaciones del protocolo de prueba. `smoke-docker.py` prueba sesión anón
 dos simuladores → PostgreSQL → Python/modelo real, usando contenedores desechables.
 
 Se conserva Playwright porque los tests del controlador no prueban el cableado real
-de eventos DOM, acceso sin login, blur y peticiones retrasadas. Es una verificación adicional,
-fuera del workflow principal. Con el overlay ya iniciado:
+de eventos DOM, acceso sin login, blur y peticiones retrasadas. Está incluida en CI mediante siete ejecuciones aisladas HTTP/MQTT.
+Para repetirlas sin configurar un laboratorio:
+
+```bash
+PLANT_TEST_IMAGE=plantclassifier:reliability python3 scripts/test-browser-repeat.py
+```
+
+Alternativamente, con un overlay de simulación ya iniciado:
 
 ```bash
 npx playwright install chromium  # O usar CHROME_PATH con Chrome ya instalado.

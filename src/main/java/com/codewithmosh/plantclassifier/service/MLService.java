@@ -20,17 +20,29 @@ public class MLService {
     private final String script;
     private final Path directory;
     private final Duration timeout;
+    private final boolean persistent;
+    private final Semaphore workerSlot = new Semaphore(1);
+    private volatile Process worker;
+    private final Object workerLifecycle = new Object();
+    private boolean shuttingDown;
+    private long workerSequence;
+    private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
     // Each admitted process has two virtual stream readers; no unbounded work queue.
     private final Semaphore capacity = new Semaphore(2);
     private record Output(byte[] bytes, boolean overflow) {}
 
+    public MLService(String python, String script, String directory, Duration timeout) {
+        this(python, script, directory, timeout, false);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
     public MLService(@Value("${ml.python.path}") String python, @Value("${ml.script.path}") String script,
-                     @Value("${ml.working-directory}") String directory, @Value("${ml.timeout}") Duration timeout) {
+                     @Value("${ml.working-directory}") String directory, @Value("${ml.timeout}") Duration timeout,
+                     @Value("${ml.persistent:true}") boolean persistent) {
         if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("ML timeout must be positive");
         this.python = python;
         this.script = script;
         this.directory = Path.of(directory).toAbsolutePath().normalize();
-        this.timeout = timeout;
+        this.timeout = timeout; this.persistent = persistent;
     }
     private static Output drain(InputStream input) throws IOException {
         try (input; var retained = new ByteArrayOutputStream()) {
@@ -56,6 +68,7 @@ public class MLService {
                 || humidity < 0 || humidity > 100 || ph < 0 || ph > 14 || soilMoisture < 0 || soilMoisture > 100) {
             throw new SystemFailure(500, "ml-input", "Invalid prediction input");
         }
+        if (persistent) return predictPersistent(temperature, humidity, ph, soilMoisture);
         if (!capacity.tryAcquire()) throw new SystemFailure(503, "ml-busy", "Prediction capacity is busy");
         Process process = null;
         FutureTask<Output> stdout = null;
@@ -106,6 +119,71 @@ public class MLService {
             if (stdout != null) stdout.cancel(true);
             if (stderr != null) stderr.cancel(true);
             capacity.release();
+        }
+    }
+    private String predictPersistent(double temperature, double humidity, double ph, double soil) {
+        if (!workerSlot.tryAcquire()) throw new SystemFailure(503, "ml-busy", "Prediction worker is busy");
+        FutureTask<String> task = null;
+        try {
+            Process current;
+            synchronized (workerLifecycle) {
+                if (shuttingDown) throw new SystemFailure(503,"ml-stopped","Prediction service is shutting down");
+                if (worker == null || !worker.isAlive()) {
+                    closeWorker();
+                    worker = new ProcessBuilder(python, script, "--worker").directory(directory.toFile())
+                            .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                }
+                current = worker;
+            }
+            long id = ++workerSequence;
+            byte[] request = JSON.writeValueAsBytes(java.util.Map.of("id", id, "values", new double[]{temperature,humidity,ph,soil}));
+            task = new FutureTask<>(() -> {
+                current.getOutputStream().write(request); current.getOutputStream().write('\n'); current.getOutputStream().flush();
+                var line = new ByteArrayOutputStream();
+                int next;
+                while ((next = current.getInputStream().read()) != -1 && next != '\n') {
+                    if (line.size() >= 4096) throw new IOException("Oversized worker response");
+                    line.write(next);
+                }
+                if (next == -1) throw new EOFException("Worker exited");
+                return line.toString(StandardCharsets.UTF_8);
+            });
+            Thread.ofVirtual().name("ml-worker-response").start(task);
+            var reply = JSON.readTree(task.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
+            if (reply.path("id").asLong(-1) != id) throw new IOException("Uncorrelated worker response");
+            String status = reply.path("status").asString("");
+            if (status.equals("out-of-domain")) throw new SystemFailure(422,"ml-out-of-domain","Measurements outside model training domain");
+            String prediction = reply.path("prediction").asString("");
+            if (!status.equals("ok") || !LABELS.contains(prediction)) throw new IOException("Invalid worker response");
+            return prediction;
+        } catch (TimeoutException error) {
+            closeWorker(); throw new SystemFailure(504,"ml-timeout","Prediction worker timed out");
+        } catch (InterruptedException error) {
+            closeWorker(); Thread.currentThread().interrupt(); throw new SystemFailure(503,"ml-interrupted","Prediction interrupted");
+        } catch (IOException | ExecutionException | RuntimeException error) {
+            if (error instanceof SystemFailure failure) throw failure;
+            closeWorker(); throw new SystemFailure(500,"ml-execution","Prediction worker failed; next request starts a fresh worker");
+        } finally {
+            if (task != null) task.cancel(true);
+            workerSlot.release();
+        }
+    }
+    @jakarta.annotation.PreDestroy
+    public void shutdown() {
+        synchronized (workerLifecycle) { shuttingDown = true; closeWorker(); }
+    }
+    public void closeWorker() {
+        Process current;
+        synchronized (workerLifecycle) { current = worker; worker = null; }
+        if (current != null) {
+            current.descendants().forEach(ProcessHandle::destroyForcibly);
+            current.destroyForcibly();
+            try {
+                if (current.waitFor(500, TimeUnit.MILLISECONDS)) {
+                    current.getInputStream().close(); current.getOutputStream().close(); current.getErrorStream().close();
+                }
+            } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+            catch (IOException ignored) { /* Already closed by the process reaper. */ }
         }
     }
 }

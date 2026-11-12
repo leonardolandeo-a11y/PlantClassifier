@@ -1,0 +1,63 @@
+{
+  "worker_ms": {
+    "n": 100,
+    "cold_ms": 812.5423390010837,
+    "p50": 12.003843497950584,
+    "p95": 22.380726997653255,
+    "p99": 22.789553997426992,
+    "max": 23.70142399740871,
+    "failures": 0
+  },
+  "environment": "20 fresh Python processes plus one persistent worker (first request + 100 warm requests); real unchanged model; load_ms includes lazy sklearn imports.",
+  "summary": {
+    "imports_ms": {
+      "n": 20,
+      "p50": 214.0753509993374,
+      "p95": 287.7584960006061,
+      "p99": 294.57270100101596,
+      "max": 294.57270100101596,
+      "failures": 0
+    },
+    "load_ms": {
+      "n": 20,
+      "p50": 593.4867259984458,
+      "p95": 692.4854969984153,
+      "p99": 739.4646299981105,
+      "max": 739.4646299981105,
+      "failures": 0
+    },
+    "inference_ms": {
+      "n": 20,
+      "p50": 28.513871000541258,
+      "p95": 32.47721600200748,
+      "p99": 33.070137000322575,
+      "max": 33.070137000322575,
+      "failures": 0
+    },
+    "peak_rss_kib": {
+      "n": 20,
+      "p50": 185722.0,
+      "p95": 186388,
+      "p99": 186536,
+      "max": 186536,
+      "failures": 0
+    },
+    "total_ms": {
+      "n": 20,
+      "p50": 985.8689430002414,
+      "p95": 1188.917486997525,
+      "p99": 1203.498563998437,
+      "max": 1203.498563998437,
+      "failures": 0
+    },
+    "interpreter_start_exit_ms": {
+      "n": 20,
+      "p50": 7.6058539998484775,
+      "p95": 8.94854600119288,
+      "p99": 10.387032998551149,
+      "max": 10.387032998551149,
+      "failures": 0
+    }
+  },
+  "conditions": "2026-11-12, Linux workstation, local Docker, simulated devices only; empirical percentiles, no Wi-Fi or mechanical timing."
+}

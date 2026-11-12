@@ -24,6 +24,11 @@ services:
       MQTT_USERNAME: backend
       MQTT_PASSWORD: ${MQTT_PASSWORD:?Set backend MQTT_PASSWORD in a private env file}
       MQTT_ACK_TIMEOUT: ${MQTT_ACK_TIMEOUT:-600ms}
+      MQTT_MOVEMENT_TIMEOUT: ${MQTT_MOVEMENT_TIMEOUT:-600ms}
+      MQTT_SAFETY_TIMEOUT: ${MQTT_SAFETY_TIMEOUT:-600ms}
+      MQTT_ACQUISITION_TIMEOUT: ${MQTT_ACQUISITION_TIMEOUT:-600ms}
+      MQTT_STATUS_TIMEOUT: ${MQTT_STATUS_TIMEOUT:-750ms}
+      MQTT_CAPTURE_TIMEOUT: ${MQTT_CAPTURE_TIMEOUT:-3s}
     depends_on:
       mosquitto:
         condition: service_healthy

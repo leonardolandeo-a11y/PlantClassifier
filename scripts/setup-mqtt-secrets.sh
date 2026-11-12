@@ -18,7 +18,9 @@ for account in backend movement sensor health; do
 done
 # Hash in-place with the exact broker image; no password in process arguments.
 docker run --rm --user "$(id -u):$(id -g)" -v "$staging:/secrets" eclipse-mosquitto:2.0.22 mosquitto_passwd -U /secrets/passwords
-# Mosquitto drops privileges to container UID 1883. Parent stays owner-only on host.
-chmod 644 "$staging/passwords" "$staging/health-password"
+# Only newly generated files: Mosquitto drops privileges to container UID 1883.
+# Parent stays owner-only on host; existing credentials are never changed.
+docker run --rm --user 0:0 -v "$staging:/secrets" --entrypoint sh eclipse-mosquitto:2.0.22 \
+  -c 'chown 1883:1883 /secrets/passwords /secrets/health-password && chmod 600 /secrets/passwords /secrets/health-password'
 mv "$staging/passwords" "$staging/health-password" "$secrets/"
 echo 'Ready. Copy the backend password into a separate private env file, device passwords into ignored mqtt_config.h files.'

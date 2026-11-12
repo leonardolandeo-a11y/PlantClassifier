@@ -28,6 +28,7 @@ services:
       ML_PYTHON_PATH: /opt/venv/bin/python3
       ML_SCRIPT_PATH: predict.py
       ML_WORKING_DIRECTORY: /app/MLClassification
+      ML_PERSISTENT: ${ML_PERSISTENT:-true}
       ML_TIMEOUT: ${ML_TIMEOUT:-30s}
       ESP32_URL: ${ESP32_URL:?Set the sensor ESP32 address}
       MOVEMENT_ESP32_URL: ${MOVEMENT_ESP32_URL:?Set the movement ESP32 address}
@@ -38,7 +39,7 @@ services:
       SENSOR_TEMPERATURE_MIN: ${SENSOR_TEMPERATURE_MIN:--40}
       SENSOR_TEMPERATURE_MAX: ${SENSOR_TEMPERATURE_MAX:-85}
     ports:
-      - "0.0.0.0:${APP_PORT:-18080}:8080"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-18080}:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3).read()"]
       interval: 15s

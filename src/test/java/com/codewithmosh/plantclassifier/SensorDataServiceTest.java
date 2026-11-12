@@ -166,4 +166,24 @@ class SensorDataServiceTest {
         assertEquals("stale-sample", assertThrows(SystemFailure.class, service::captureData).category());
         verifyNoInteractions(repository, ml);
     }
+    @Test void repeatedPhysicalSampleReturnsExistingMeasurementWithoutPredictionOrSave() {
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"deviceId\":\"sensor\",\"sampleId\":\"boot-1\"}");
+        var existing = new SensorData(); existing.setId(42L); existing.setPredictionStatus("FAILED");
+        when(repository.findByDeviceIdAndSampleId("sensor", "boot-1")).thenReturn(Optional.of(existing));
+        assertEquals(42L, service.captureData().id());
+        verify(repository, never()).saveAndFlush(any()); verifyNoInteractions(ml);
+    }
+    @Test void concurrentDuplicateInsertReturnsWinningRow() {
+        reading("{\"ph\":7,\"temperature\":20,\"humidity\":50,\"simulated\":true,\"deviceId\":\"sensor\",\"sampleId\":\"boot-1\"}");
+        var existing = new SensorData(); existing.setId(43L); existing.setPredictionStatus("PENDING");
+        when(repository.findByDeviceIdAndSampleId("sensor", "boot-1")).thenReturn(Optional.empty(), Optional.of(existing));
+        when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate"));
+        assertEquals(43L, service.captureData().id()); verifyNoInteractions(ml);
+    }
+    @Test void invalidPhysicalSensorIsDistinguishedFromNetworkFailure() {
+        server.expect(requestTo("http://sensor.test/capture")).andRespond(withStatus(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON).body("{\"error\":\"DHT11 or pH ADC read failed or outside valid range\"}"));
+        assertEquals("sensor-invalid",assertThrows(SystemFailure.class,()->service.captureData()).category());
+        verifyNoInteractions(repository,ml);
+    }
 }

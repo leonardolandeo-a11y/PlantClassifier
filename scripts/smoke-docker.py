@@ -17,6 +17,10 @@ import urllib.request
 
 
 def inside():
+    # Fault injection below is only permitted in this disposable JVM container.
+    pid1=Path('/proc/1/cmdline').read_bytes().split(b'\0')
+    if b'app.jar' not in pid1 or not any(item.endswith(b'java') for item in pid1):
+        raise RuntimeError('--inside requires the isolated application container')
     from esp32_simulator import make_server
     server = make_server("127.0.0.1", 18080, os.environ["DEVICE_TOKEN"], "movement")
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -120,6 +124,43 @@ def inside():
             raise AssertionError('Invalid soil accepted')
         except urllib.error.HTTPError as error: assert error.code == 502
         assert get('/sensors')['id'] == previous_id
+        # Freeze only the persistent Python child of PID 1 in this temporary container.
+        # The measurement must commit before the real ML timeout; STOP must remain usable.
+        import signal
+        import concurrent.futures
+        candidates=[]
+        for proc in Path('/proc').iterdir():
+            if not proc.name.isdigit(): continue
+            try:
+                command=(proc/'cmdline').read_bytes().split(b'\0')
+                parent=next(line for line in (proc/'status').read_text().splitlines() if line.startswith('PPid:'))
+                if b'predict.py' in command and b'--worker' in command and parent.split()[1]=='1': candidates.append(int(proc.name))
+            except (OSError,StopIteration): pass
+        assert len(candidates)==1,'Expected exactly one application ML worker'
+        frozen=candidates[0]
+        os.kill(frozen,signal.SIGSTOP)
+        fixture.update(temperature=25,humidity=60,ph=6.5,soilMoisture=45,soilStatus='calibrated')
+        def blocked_capture():
+            with post('/sensors/capture',token=csrf) as response: return json.load(response)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                prediction=executor.submit(blocked_capture)
+                time.sleep(.1)
+                with post('/movement/session',token=csrf) as response: control=json.load(response)
+                for sequence,command in enumerate(['FORWARD','STOP'],1):
+                    with post('/movement',{'command':command,'speed':150 if command=='FORWARD' else 0,'sessionId':control['sessionId'],'sequence':sequence},csrf) as response:
+                        assert json.load(response)['command']==command
+                assert not prediction.done(),'Actuation must bypass the blocked ML request'
+                failed=prediction.result(timeout=40)
+            assert failed['predictionStatus']=='FAILED' and failed['predictionError']=='ml-timeout'
+            assert get('/sensors')==failed,'PostgreSQL must retain the measurement after Python timeout'
+            with post('/sensors/capture',token=csrf) as response: recovered=json.load(response)
+            assert recovered['predictionStatus']=='SUCCEEDED' and recovered['id']>failed['id']
+            assert not Path(f'/proc/{frozen}').exists(),'Timed-out worker must be reaped'
+            print('PASS real worker timeout: PostgreSQL capture retained, STOP bypasses ML, fresh worker recovers')
+        finally:
+            try: os.kill(frozen,signal.SIGCONT)
+            except ProcessLookupError: pass
         print('PASS soil: fractional inputs, current predictions, domain abstention, missing/invalid readings, persisted model/status; no stale recommendation')
         print("Docker E2E passed: anonymous session/CSRF, missing-CSRF rejection, device acknowledgement, real ML prediction, PostgreSQL persistence and latest reading")
     finally:

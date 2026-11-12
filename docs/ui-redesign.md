@@ -51,6 +51,6 @@ Para repetir la comprobación de navegador, iniciar `npm run dev` y ejecutar `no
 
 ## Alcance móvil y pendientes
 
-Expo incluye layout, navegación, cliente CSRF, consulta/captura de sensores y presentación del resultado. Movimiento es una vista previa con controles deshabilitados. Falta integrar las sesiones nativas de carro/servo y validar las paradas con AppState y gestos en un dispositivo. No se probó Android/iOS en hardware, ni captura nativa contra el backend real; el bundle no equivale a un APK. Ver `mobile/README.md` para ejecución y límites.
+Expo incluye layout, navegación, cliente CSRF, consulta/captura de sensores y presentación del resultado. Movimiento utiliza las máquinas de control compartidas y habilitación explícita de laboratorio. AppState y gestos se prueban con mocks; su validación en Android físico sigue pendiente. No se probó Android/iOS en hardware, ni captura nativa contra el backend real; el bundle no equivale a un APK. Ver `mobile/README.md` para ejecución y límites.
 
 No se ejecutó el E2E histórico que requiere el stack completo y un dispositivo simulado; la prueba nueva de UI aísla la presentación y navegación mediante respuestas HTTP simuladas. No se hicieron pruebas físicas ni cambios de backend, firmware, Docker, endpoints, red, IPs, WiFi, tokens o `.env.lab`. Se conservaron los cambios preexistentes en esos archivos. Sin commit ni push.

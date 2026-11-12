@@ -52,6 +52,11 @@ export class HttpClient {
       const problem = await response.json().catch(() => null) as { type?: string } | null;
       const category = problem?.type?.replace('urn:plantclassifier:', '');
       const messages: Record<string, string> = {
+        'sensor-invalid': 'El sensor devolvió una lectura inválida. No se guardó una medición nueva.',
+        'sensor-data': 'Lectura fuera de rango o incompleta. No se guardó una medición nueva.',
+        'mqtt-busy': 'Transporte MQTT saturado. Suelta los controles y vuelve a intentarlo.',
+        'capture-busy': 'Hay otra captura en curso. Vuelve a intentarlo al finalizar.',
+        'persistence': 'No se pudo guardar la medición en PostgreSQL.',
         'capture-deferred': 'Suelta el servo y vuelve a capturar. La lectura se aplazó para mantener el control seguro.',
         'stale-sample': 'La muestra ha caducado. Suelta el servo y captura otra vez.',
         'broker-disconnected': 'Broker MQTT desconectado. Suelta los controles y vuelve a pulsar después de reconectar.',

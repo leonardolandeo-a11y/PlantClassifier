@@ -137,3 +137,45 @@ it('coalesces E/Q during acquisition and releasing Q returns to held E without a
   await act(async () => {fireEvent.keyUp(window,{key:'e'});});
   expect(commands.at(-1)).toBe('HOLD');
 });
+it.each(['completed', 'explicit HOLD', 'blur'])('short R release continues CENTER until %s', async end => {
+  vi.useFakeTimers();
+  const commands: string[] = [];
+  let complete = false;
+  vi.spyOn(httpClient, 'request').mockImplementation(async (_url, options) => {
+    const command = (options?.body as {command?: string})?.command;
+    if (command) commands.push(command);
+    return {angle: complete ? 100 : 90, state: command === 'CENTER' && !complete ? 'centering' : 'holding', epoch: 22, deviceTimeMs: 0} as never;
+  });
+  render(<ServoPanel />);
+  await act(async () => {fireEvent.keyDown(window, {key:'r'});});
+  await act(async () => {fireEvent.keyUp(window, {key:'r'});});
+  expect(commands).toEqual(['CENTER']);
+  await act(async () => {await vi.advanceTimersByTimeAsync(250);});
+  expect(commands).toEqual(['CENTER','CENTER']);
+  await act(async () => {
+    if (end === 'completed') {complete = true; await vi.advanceTimersByTimeAsync(250);}
+    else if (end === 'blur') fireEvent.blur(window);
+    else fireEvent.click(screen.getByRole('button', {name:'Detener giro'}));
+  });
+  expect(commands.at(-1)).toBe('HOLD');
+  const count = commands.length;
+  await act(async () => {await vi.advanceTimersByTimeAsync(1000);});
+  expect(commands).toHaveLength(count);
+});
+
+it('failed HOLD discards a direction pressed while stopping and requires a fresh press', async () => {
+  let reject!: (error:Error)=>void;
+  const commands:string[]=[];
+  vi.spyOn(httpClient,'request').mockImplementation(async (_url, options) => {
+    const command=(options?.body as {command?:string})?.command;
+    if(command) commands.push(command);
+    if(command==='HOLD') return await new Promise<unknown>((_r,j)=>{reject=j;}) as never;
+    return {angle:100,state:'increasing',epoch:1,deviceTimeMs:0} as never;
+  });
+  render(<ServoPanel/>);
+  await act(async()=>{fireEvent.keyDown(window,{key:'e'});});
+  await act(async()=>{fireEvent.keyUp(window,{key:'e'});fireEvent.keyDown(window,{key:'q'});});
+  await act(async()=>{reject(new Error('HOLD timeout'));});
+  expect(commands).toEqual(['INCREASE','HOLD']);
+  expect(screen.getByRole('alert').textContent).toContain('HOLD timeout');
+});

@@ -5,6 +5,21 @@ cli=${ARDUINO_CLI:-arduino-cli}
 fqbn=${ESP32_FQBN:-esp32:esp32:esp32}
 work=$(mktemp -d /tmp/plant-firmware.XXXXXX)
 trap 'rm -rf "$work"' EXIT
+if ! command -v "$cli" >/dev/null 2>&1 && [[ -z "${ARDUINO_CLI:-}" ]]; then
+  for candidate in /tmp/.mount_arduin*/resources/app/lib/backend/resources/arduino-cli; do
+    if [[ -x "$candidate" ]]; then cli="$candidate"; break; fi
+  done
+  if ! command -v "$cli" >/dev/null 2>&1; then
+    for ide in "$HOME/.local/opt/arduino.AppImage" "$HOME"/Applications/arduino-ide*AppImage; do
+      if [[ -x "$ide" ]]; then
+        (cd "$work" && "$ide" --appimage-extract resources/app/lib/backend/resources/arduino-cli >/dev/null)
+        cli="$work/squashfs-root/resources/app/lib/backend/resources/arduino-cli"
+        break
+      fi
+    done
+  fi
+fi
+command -v "$cli" >/dev/null 2>&1 || { echo 'Install Arduino CLI or set ARDUINO_CLI to its executable' >&2; exit 1; }
 for sketch in Movement PlantClassifier; do
   mkdir -p "$work/$sketch"
   cp "ESP32/$sketch/$sketch.ino" "$work/$sketch/"
@@ -30,7 +45,7 @@ CONFIG
   if [ "$sketch" = Movement ] && "$nm_tool" -u -C "$object" | grep -E 'digitalWrite|pinMode|analogWrite|analogRead|ledc(Write|Attach|Setup|Read)|Servo::|DHT::'; then
     echo 'FAIL: simulation sketch references hardware output or sensor input functions' >&2; exit 1
   fi
-  echo "PASS $sketch: ESP32 compiled; movement simulation checked for hardware I/O"
+  echo "PASS $sketch: HTTP and MQTT compiled without upload; Movement simulation checked for hardware I/O"
 done
 
 # Compile future hardware branches only; these artifacts are never uploaded by this script.

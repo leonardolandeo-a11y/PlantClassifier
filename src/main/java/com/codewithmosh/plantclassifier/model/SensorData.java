@@ -15,8 +15,11 @@ public class SensorData {
     @Column(nullable = false) private double ph;
     @Column(nullable = false) private double temperature;
     @Column(nullable = false) private double humidity;
-    // Backend reception time in UTC. Null means a legacy measurement with unknown capture time.
+    // Estimated acquisition time: backend receipt minus device sample age. Not a synchronized device clock.
     private Instant capturedAt;
+    private Instant receivedAt;
+    @Column(length = 64) private String deviceId;
+    @Column(length = 80) private String sampleId;
     private Boolean simulated;
     private String temperatureSource;
     private String humiditySource;

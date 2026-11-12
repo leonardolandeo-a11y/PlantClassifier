@@ -1,23 +1,27 @@
 # PlantClassifier
 
 PlantClassifier permite conducir un robot con W/A/S/D y consultar qué cultivo sugiere
-un modelo a partir de temperatura, humedad y pH. La página se comunica con Spring Boot;
+un modelo a partir de temperatura, humedad del aire, humedad del suelo y pH. La página se comunica con Spring Boot;
 el servidor guarda las mediciones en PostgreSQL y ejecuta Python para predecir.
 
 Hay **dos ESP32 independientes**:
 
 - **Sensores:** DHT11 para temperatura/humedad ambiental, suelo analógico y potenciómetro para simular pH.
   El potenciómetro no mide pH químico. La interfaz y la base de datos conservan ese origen.
-- **Movimiento:** recibe comandos HTTP autenticados. Por defecto solo los imprime en
+- **Movimiento:** recibe comandos MQTT cuando se configura ese transporte; HTTP es el rollback explícito. Por defecto solo los imprime en
   Serial Monitor; activar el TB6612FNG y el servo requiere revisar el hardware.
 
 ```mermaid
 flowchart TD
     UI[Navegador: React + TypeScript + Tailwind] -->|Sesión y CSRF| API[Spring Boot / Java 21]
-    API -->|HTTP y token| SENSOR[ESP32 sensores: DHT11, suelo y potenciómetro]
-    API -->|HTTP y token| MOTOR[ESP32 movimiento: simulación por defecto]
+    MOBILE[Expo: Datos y Movimiento] -->|Cookies y CSRF| API
+    API -->|MQTT configurado| BROKER[Mosquitto]
+    BROKER --> SENSOR[ESP32 sensores: DHT11, suelo y potenciómetro]
+    BROKER --> MOTOR[ESP32 movimiento: simulación por defecto]
+    API -.->|Rollback HTTP explícito| SENSOR
+    API -.->|Rollback HTTP explícito| MOTOR
     API -->|JPA y Flyway| DB[(PostgreSQL persistente)]
-    API -->|Proceso con timeout| ML[Python / Random Forest]
+    API -->|Worker Python con timeout| ML[Python / Random Forest]
     MOTOR --> SERIAL[Serial Monitor / actuadores opcionales]
 ```
 
@@ -34,8 +38,7 @@ test -f .env || cp .env.example .env
 docker compose up -d --build --wait
 ```
 
-Abre `http://127.0.0.1:18080`: el dashboard permite usar **Capture Data** y W/A/S/D
-directamente, sin login. Compose publica exclusivamente en `127.0.0.1`.
+Abre `http://127.0.0.1:18080`: el dashboard permite usar **Datos** para capturar y **Movimiento** para W/A/S/D, sin login. Compose publica en `127.0.0.1` por defecto. Para Android/LAN configura explícitamente `APP_BIND_ADDRESS=0.0.0.0`.
 Si ya tienes datos, conserva el mismo nombre de proyecto Compose y volumen. Para una
 base anterior a Flyway, sigue [MIGRATIONS](docs/MIGRATIONS.md) antes de arrancar.
 Nunca necesitas borrar volúmenes para ejecutar esta guía.
@@ -56,11 +59,11 @@ observar Serial; los comandos siguen viajando por Wi-Fi/HTTP.
 
 ## Cómo funciona
 
-**Movimiento:** una tecla determina la dirección; la última pulsada tiene prioridad.
+**Movimiento:** W/S controlan propulsión y A/D dirección; la última pulsada tiene prioridad por eje.
 El frontend adquiere control si hace falta, envía un comando y espera su confirmación.
 Los cambios de dirección pendientes se reducen al más reciente. Soltar todas las teclas,
 perder foco o pulsar STOP envía STOP inmediatamente. Un error cancela el movimiento;
-hay que soltar y volver a pulsar. LEFT/RIGHT orientan el servo y detienen la propulsión.
+hay que soltar y volver a pulsar. R centra el MG996R incluso tras una pulsación breve; HOLD o una cancelación de seguridad lo interrumpen. A/D mantenidas junto a W/S conservan ambos ejes; soltar W/S elimina la propulsión.
 
 **Captura:** consultar ESP32 → validar valores y origen → guardar medición → ejecutar
 Python → guardar predicción → devolver resultado. Si falla ML, la medición permanece
@@ -133,3 +136,17 @@ Usa `PLANT_BACKEND_URL` para cambiar únicamente el proxy de desarrollo.
 Maven ejecuta el build en `generate-resources` y empaqueta los assets en el JAR.
 Docker compila Vite en una etapa Node; producción ejecuta únicamente Spring y Python.
 No se versionan los assets generados. Detalles y validación: [migración React](docs/REACT_MIGRATION.md).
+
+## Validación y cambios locales
+
+Consulta [validación integral](docs/FINAL_VALIDATION.md) para pruebas ejecutadas,
+limitaciones y puesta en marcha. No se realizaron commits, push ni cargas a placas.
+MQTT se inicia con el overlay documentado en [guía MQTT](docs/MQTT_MIGRATION.md).
+La alternativa HTTP permanece en el Compose base.
+
+El worker ML conserva una sola copia del modelo, admite una inferencia cada vez y
+rechaza saturación sin encolar trabajo ilimitado. Un timeout mata el proceso; la
+siguiente solicitud crea uno nuevo, sin repetir automáticamente la captura.
+`ML_PERSISTENT=false` conserva el proceso por predicción como rollback.
+El modelo y el dataset no se sustituyen. Sus datos sintéticos no validan precisión
+agronómica de campo.

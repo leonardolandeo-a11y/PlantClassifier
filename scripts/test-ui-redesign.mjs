@@ -31,10 +31,16 @@ for(const width of [1440,390,320]){
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:`/tmp/plant-movimiento-${width}.png`,fullPage:true});
 }
-await page.keyboard.down('w'); await page.waitForFunction(()=>document.querySelector('#movementStatus').textContent.includes('accepted')); await page.keyboard.up('w');
-await page.keyboard.down('e'); await page.waitForTimeout(100);
-await page.getByRole('button',{name:'Datos',exact:true}).click(); await page.keyboard.up('e'); await page.waitForTimeout(100);
-assert.ok(calls.some(c=>c?.command==='STOP'));assert.ok(calls.some(c=>c?.command==='HOLD'));
+const navigationStart=calls.length;
+await page.keyboard.down('w');
+await page.waitForFunction(()=>document.querySelector('#movementStatus').textContent.includes('FORWARD accepted'));
+await page.keyboard.down('e');
+await page.waitForFunction(()=>document.querySelector('.servo-reading').textContent.includes('100°'));
+await page.getByRole('button',{name:'Datos',exact:true}).click();
+await page.keyboard.up('w'); await page.keyboard.up('e');
+await page.waitForTimeout(100);
+assert.ok(calls.slice(navigationStart).some(c=>c?.command==='STOP'));
+assert.ok(calls.slice(navigationStart).some(c=>c?.command==='HOLD'));
 assert.deepEqual(errors,[]);
 console.log('PASS: 2 tabs, data/result, desktop + 390/320px no overflow, WASD, STOP/HOLD on navigation; mocked API only.');
 }finally{await browser.close();}

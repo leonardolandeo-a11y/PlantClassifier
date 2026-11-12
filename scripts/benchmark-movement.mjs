@@ -30,13 +30,13 @@ try {
       const start=performance.now();
       const before=window.timings.length;
       const accepted=new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>{observer.disconnect();reject(new Error('No acknowledgement: '+expected));},3000);
+        const timer=setTimeout(()=>{observer.disconnect();reject(new Error('No acknowledgement: '+expected+'; '+document.querySelector('#movementStatus')?.textContent));},3000);
         const observer=new MutationObserver(()=>{
           if(document.querySelector('#movementStatus').textContent.includes(expected+' accepted')){
             clearTimeout(timer);observer.disconnect();resolve(performance.now());
           }
         });
-        observer.observe(document.querySelector('#movementStatus'),{childList:true});
+        observer.observe(document.querySelector('#movementStatus'),{childList:true,characterData:true,subtree:true});
       });
       document.dispatchEvent(new KeyboardEvent(type,{key,bubbles:true,cancelable:true}));
       const end=await accepted;
@@ -55,22 +55,25 @@ try {
     for(const [key,command] of [['w','FORWARD'],['a','LEFT'],['s','BACKWARD'],['d','RIGHT']]){
       await page.goto(base);
       await page.waitForFunction(()=>window.timings.some(r=>r.url==='/sensors'));
-      // Same readiness window in both versions; allows page bootstrap to finish.
-      await page.waitForTimeout(50);
+      await page.getByRole('button',{name:'Movimiento',exact:true}).click();
+      await page.locator('#movementStatus').waitFor();
       await act(key,'keydown',command,'initial '+key);
       await act(key,'keyup','STOP','release STOP');
     }
     for(const [key,command] of [['a','LEFT'],['d','RIGHT'],['s','BACKWARD']]){
       await act('w','keydown','FORWARD','restart W');
-      await act(key,'keydown',command,'W -> '+key.toUpperCase());
+      await act(key,'keydown',key === 's' ? command : `steering ${command} — FORWARD`,'W -> '+key.toUpperCase());
       await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keyup',{key:'w',bubbles:true})));
       await act(key,'keyup','STOP','release STOP');
     }
   }
   const summary=Object.fromEntries(Object.entries(samples).map(([name,values])=>{
     const sorted=values.toSorted((a,b)=>a-b),n=values.length;
-    return [name,{n,mean:values.reduce((a,b)=>a+b,0)/n,median:(sorted[Math.floor((n-1)/2)]+sorted[Math.floor(n/2)])/2,p95:sorted[Math.ceil(n*.95)-1],max:sorted[n-1]}];
+    return [name,{n,mean:values.reduce((a,b)=>a+b,0)/n,median:(sorted[Math.floor((n-1)/2)]+sorted[Math.floor(n/2)])/2,p50:sorted[Math.ceil(n*.50)-1],p95:sorted[Math.ceil(n*.95)-1],p99:sorted[Math.ceil(n*.99)-1],failures:0,max:sorted[n-1]}];
   }));
-  writeFileSync(process.env.PLANT_BENCHMARK_OUTPUT,JSON.stringify({unit:'ms',summary,samples},null,2)+'\n');
+  writeFileSync(process.env.PLANT_BENCHMARK_OUTPUT,JSON.stringify({environment:'local software simulation; no physical timing',unit:'ms',summary,samples},null,2)+'\n');
   console.log(JSON.stringify(summary,null,2));
+} catch (error) {
+  writeFileSync(process.env.PLANT_BENCHMARK_OUTPUT,JSON.stringify({environment:'local software simulation',unit:'ms',completed:false,failures:[String(error)],samples},null,2)+'\n');
+  throw error;
 } finally {await browser.close();}

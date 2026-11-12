@@ -1,0 +1,64 @@
+## main...origin/main
+ M .env.example
+ M .github/workflows/verify.yml
+ M ESP32/PlantClassifier/PlantClassifier.ino
+ M ESP32/PlantClassifier/sensor_servo.h
+ M ESP32/libraries/PlantMqtt/src/PlantMqtt.h
+ M ESP32/tests/movement_mqtt_test.cpp
+ M ESP32/tests/mqtt_test_helpers.h
+ M ESP32/tests/sensor_http_test.cpp
+ M ESP32/tests/sensor_mqtt_test.cpp
+ M MLClassification/predict.py
+ M README.md
+ M docker-compose.mqtt.yaml
+ M docker-compose.yaml
+ M docs/MIGRATIONS.md
+ M docs/MQTT_MIGRATION.md
+ M docs/SETUP.md
+ M docs/ui-redesign.md
+ M frontend/src/api/httpClient.ts
+ M frontend/src/components/sensors/SensorGrid.tsx
+ M frontend/src/components/servo/ServoPanel.tsx
+ M frontend/tests/servo.test.tsx
+ M mobile/App.tsx
+ M mobile/README.md
+ M mobile/package.json
+ M mobile/src/api/client.ts
+ M mobile/src/screens/MovementScreen.tsx
+ M scripts/benchmark-movement.mjs
+ M scripts/browser-e2e.mjs
+ M scripts/compile-firmware.sh
+ M scripts/esp32-simulator.py
+ M scripts/setup-mqtt-secrets.sh
+ M scripts/smoke-docker.py
+ M scripts/test-browser.py
+ M scripts/test-mosquitto-config.sh
+ M scripts/test-ui-redesign.mjs
+ M src/main/java/com/codewithmosh/plantclassifier/dto/CaptureResponse.java
+ M src/main/java/com/codewithmosh/plantclassifier/model/SensorData.java
+ M src/main/java/com/codewithmosh/plantclassifier/mqtt/MqttDeviceTransport.java
+ M src/main/java/com/codewithmosh/plantclassifier/repository/SensorDataRepository.java
+ M src/main/java/com/codewithmosh/plantclassifier/service/DeviceResponse.java
+ M src/main/java/com/codewithmosh/plantclassifier/service/MLService.java
+ M src/main/java/com/codewithmosh/plantclassifier/service/SensorDataService.java
+ M src/main/resources/application.properties
+ M src/test/java/com/codewithmosh/plantclassifier/PostgresMigrationTest.java
+ M src/test/java/com/codewithmosh/plantclassifier/SensorDataServiceTest.java
+ M src/test/java/com/codewithmosh/plantclassifier/mqtt/MqttTransportTest.java
+ M src/test/java/com/codewithmosh/plantclassifier/service/MLServiceTest.java
+?? MLClassification/test_worker.py
+?? docs/FINAL_VALIDATION.md
+?? docs/validation/browser-http-local.json
+?? docs/validation/browser-runs.json
+?? docs/validation/git-status.txt
+?? docs/validation/ml-local.json
+?? docs/validation/mqtt-local.json
+?? frontend/src/servo/controller.ts
+?? mobile/tests/control.test.tsx
+?? mobile/tests/native.tsx
+?? mobile/vitest.config.ts
+?? scripts/benchmark-ml.py
+?? scripts/mqtt-simulator-bridge.py
+?? scripts/test-browser-repeat.py
+?? src/main/resources/db/migration/V7__sample_identity.sql
+?? src/test/java/com/codewithmosh/plantclassifier/mqtt/MqttBudgetsTest.java

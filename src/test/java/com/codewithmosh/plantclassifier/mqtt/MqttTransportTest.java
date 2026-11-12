@@ -59,7 +59,7 @@ class MqttTransportTest {
     }
     JsonNode take() throws Exception { var value = commands.poll(2, TimeUnit.SECONDS); assertNotNull(value); return value; }
     void ack(JsonNode command, boolean retained, String connection) throws Exception {
-        mock.publish("plant/v1/movement/ack", JSON.writeValueAsBytes(Map.of("id", command.get("id").asString(),
+        mock.publish("plant/v1/"+command.path("_role").asString("movement")+"/ack", JSON.writeValueAsBytes(Map.of("id", command.get("id").asString(),
             "connectionId", connection, "status", 200, "body", Map.of("status", "OK"))), 0, retained);
     }
     @AfterEach void close() throws Exception {
@@ -159,5 +159,32 @@ class MqttTransportTest {
         }
         Arrays.sort(samples);
         System.out.printf(java.util.Locale.ROOT, "MOCK MQTT RTT n=100 loss=0 p50=%.3f p95=%.3f p99=%.3f max=%.3f ms%n", samples[49],samples[94],samples[98],samples[99]);
+    }
+    @Test void slowCaptureUsesSeparateBudgetAndHoldDoesNotWait() throws Exception {
+        transport.receive("plant/v1/sensor/state", new MqttMessage(JSON.writeValueAsBytes(Map.of("online",true,"connectionId",CONNECTION))));
+        var capture=transport.request("sensor","GET","/capture",new byte[0]); var first=take();
+        Thread.sleep(650); assertFalse(capture.isDone());
+        var hold=transport.request("sensor","POST","/servo","{\"command\":\"HOLD\"}".getBytes(StandardCharsets.UTF_8));
+        ack(take(),false,CONNECTION); hold.get(1,TimeUnit.SECONDS);
+        assertFalse(capture.isDone()); ack(first,false,CONNECTION); capture.get(1,TimeUnit.SECONDS);
+    }
+    @Test void changedConnectionRejectsPreviousAckAndExpiredPresenceRejectsNewWork() throws Exception {
+        pulse.shutdownNow();
+        var request=transport.request("movement","GET","/status",new byte[0]); var old=take();
+        transport.receive("plant/v1/movement/state",new MqttMessage(JSON.writeValueAsBytes(Map.of("online",true,"connectionId","b".repeat(32)))));
+        ack(old,false,CONNECTION);
+        assertThrows(ExecutionException.class,()->request.get(1,TimeUnit.SECONDS));
+        Thread.sleep(3100);
+        assertTrue(transport.request("movement","GET","/status",new byte[0]).isCompletedExceptionally());
+    }
+    @Test void saturatedNormalCapacityStillAdmitsStop() throws Exception {
+        for(int i=0;i<48;i++) transport.request("movement","GET","/status",new byte[0]);
+        var overflow=transport.request("movement","GET","/status",new byte[0]);
+        var failure=assertThrows(ExecutionException.class,()->overflow.get(1,TimeUnit.SECONDS));
+        assertEquals("mqtt-busy",((com.codewithmosh.plantclassifier.exception.SystemFailure)failure.getCause()).category());
+        var stop=transport.request("movement","POST","/movement","{\"command\":\"STOP\"}".getBytes(StandardCharsets.UTF_8));
+        JsonNode command;
+        do {command=take();} while(!command.path("body").path("command").asString("").equals("STOP"));
+        ack(command,false,CONNECTION); assertEquals(200,stop.get(1,TimeUnit.SECONDS).path("status").asInt());
     }
 }

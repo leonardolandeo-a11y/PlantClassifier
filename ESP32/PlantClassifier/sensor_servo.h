@@ -60,8 +60,9 @@ void servoCommand() {
   if (stop) servoExpire();
   else {
     if (!sensorServoReady) { servoExpire(); protocolError(503, "Servo unavailable"); return; }
-    sensorCentering = strcmp(command, "CENTER") == 0;
-    sensorDirection = sensorCentering ? 0 : strcmp(command, "INCREASE") == 0 ? 1 : -1;
+    bool center = strcmp(command, "CENTER") == 0;
+    sensorCentering = center && sensorAngle != SENSOR_SERVO_CENTER;
+    sensorDirection = center ? 0 : strcmp(command, "INCREASE") == 0 ? 1 : -1;
   }
   servoReply();
 }

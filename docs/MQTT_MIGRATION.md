@@ -1,10 +1,10 @@
 # Migración MQTT de laboratorio
 
-Implementación en main. La continuación parte del commit `f472cbd`; esta verificación no crea commits ni despliega. No se han cargado sketches ni accionado dispositivos.
+Implementación en main. La validación integral parte del commit `cf32f97`; esta verificación no crea commits ni despliega. No se han cargado sketches ni accionado dispositivos.
 
 ## Arquitectura y seguridad
 
-React/Expo → API Spring con cookies/CSRF → servicios existentes → adaptador MQTT central → Mosquitto → ESP32. PostgreSQL, migraciones y predicciones no cambian. No hay cuentas de interfaz ni roles de usuario; las credenciales MQTT son técnicas y tienen ACL por dispositivo.
+React/Expo → API Spring con cookies/CSRF → servicios existentes → adaptador MQTT central → Mosquitto → ESP32. PostgreSQL conserva las capturas con identidad de muestra (V7); ML usa un worker persistente con timeout. No hay cuentas de interfaz ni roles de usuario; las credenciales MQTT son técnicas y tienen ACL por dispositivo.
 
 `DEVICE_TRANSPORT=http` es el valor por defecto. El override Docker activa `mqtt` explícitamente. No hay fallback automático. En firmware, `MQTT_ENABLED=1` rechaza por HTTP la adquisición y las órdenes de actuadores, incluso si Spring está configurado incorrectamente. HTTP conserva diagnósticos de lectura; durante control MQTT activo no se atiende HTTP para evitar que clientes lentos bloqueen el watchdog. Para rollback hay que detener el control, restaurar ambos sketches con MQTT deshabilitado y levantar solo el Compose base. Nunca cambiar de modo con actuadores energizados.
 
@@ -23,7 +23,7 @@ Topics por `movement` y `sensor` bajo `plant/v1/<dispositivo>/`:
 
 La tarea de red utiliza ArduinoMqttClient 0.1.8; no toca actuadores. El loop principal procesa primero seguridad y órdenes urgentes. Los watchdogs existentes permanecen: carro 1500 ms y servo 1000 ms. PWM, STBY, interbloqueo, polaridad -1, GPIO y límites del MG996R se conservan. Heartbeats idénticos no reescriben PWM/STBY.
 
-Spring usa Paho asíncrono, correlación por UUID/rol/nonce y cupos separados para operaciones normales y urgentes. PUBACK/publicación no es ejecución. Los futures se eliminan al completar, desconectar o vencer. Las adquisiciones no retienen el monitor de estado durante I/O: STOP/HOLD pueden adelantarse a ellas; una revisión de control impide que la respuesta tardía reabra control y cierra esa sesión tardía. El adaptador compatible con RestClient espera el ACK en el hilo de solicitud, con límite de 600 ms configurable 50–750 ms; NO es un controlador HTTP completamente no bloqueante. Este límite es provisional y debe ajustarse con mediciones LAN, sin aumentar watchdogs. Broker desconectado, ESP32 ausente, rechazo y timeout tienen categorías distintas.
+Spring usa Paho asíncrono, correlación por UUID/rol/nonce y cupos separados para operaciones normales y urgentes. PUBACK/publicación no es ejecución. El cupo se libera cuando terminan tanto la respuesta como la publicación local; un timeout de ACK no libera capacidad si Paho aún conserva el mensaje pendiente. Al desconectar se cancelan ambas esperas. Así no se acumulan publicaciones detrás de solicitudes ya vencidas. Las adquisiciones no retienen el monitor de estado durante I/O: STOP/HOLD pueden adelantarse a ellas; una revisión de control impide que la respuesta tardía reabra control y cierra esa sesión tardía. El adaptador compatible con RestClient espera el ACK en el hilo de solicitud, con presupuestos separados descritos al final de esta guía; NO es un controlador HTTP completamente no bloqueante. Este límite es provisional y debe ajustarse con mediciones LAN, sin aumentar watchdogs. Broker desconectado, ESP32 ausente, rechazo y timeout tienen categorías distintas.
 
 ## Arranque sin alterar datos existentes
 
@@ -127,7 +127,10 @@ Medición obtenida en una ejecución local del test `readOnlyLoopbackLatencySamp
 
 Pendiente físicamente: jitter y tiempos LAN, apagado broker/Wi-Fi/backend con hardware alimentado de forma segura, consumo/stack FreeRTOS, alimentación MG996R, neutral y deadtime, calibración de suelo, fallos DHT y validación Android. No se ejecutaron pruebas de movimiento real.
 
-## Cierre de verificación — 2026-11-11
+## Registro histórico — 2026-11-11
+
+Estas cifras son anteriores a la continuación; consulta [validación final](FINAL_VALIDATION.md)
+para resultados actuales y las regresiones añadidas.
 
 - Maven: BUILD SUCCESS, 67 pruebas, 0 fallos, 0 errores, 9 omitidas (8 MQTT ejecutadas aparte; 1 benchmark HTTP opcional).
 - Frontend: 108 pruebas, lint y build aprobados; Expo: TypeScript y exportación Android aprobados.
@@ -138,4 +141,32 @@ Pendiente físicamente: jitter y tiempos LAN, apagado broker/Wi-Fi/backend con h
 - Última muestra loopback: 100 solicitudes, 0 pérdidas, P50 0.937 ms, P95 41.694 ms, P99 41.880 ms, máximo 42.323 ms. No son mediciones físicas.
 - Configuración Mosquitto: healthcheck y rechazo anónimo aprobados en la verificación previa, con credenciales temporales.
 
-No se repitieron compilaciones ni pruebas de frontend/Expo/firmware ya aprobadas porque sus fuentes no cambiaron en esta continuación. Las validaciones físicas y móviles indicadas arriba siguen pendientes.
+En ese corte histórico no se repitieron compilaciones ni pruebas de frontend/Expo/firmware sin cambios. La continuación posterior sí las volvió a ejecutar. Las validaciones físicas y móviles indicadas arriba siguen pendientes.
+
+### Presupuestos separados y saturación
+
+`MQTT_MOVEMENT_TIMEOUT`, `MQTT_SAFETY_TIMEOUT` y `MQTT_ACQUISITION_TIMEOUT`
+usan 600 ms por defecto (máximo 750 ms): acotan la espera de ACK por debajo
+ de los watchdogs existentes de 1500/1000 ms. `MQTT_STATUS_TIMEOUT` usa 750 ms
+(máximo 1000 ms); `MQTT_CAPTURE_TIMEOUT` usa 3 s (máximo 5 s) para adquisición
+DHT11/ADC. Son presupuestos del transporte, no una ampliación del watchdog.
+HTTP sigue disponible mediante el Compose base; el overlay MQTT selecciona
+exclusivamente MQTT para actuar.
+
+La cola urgente mantiene capacidad uno. Si otra parada llega mientras está llena,
+se activa una bandera atómica: el loop invalida la sesión y descarta ambas colas
+de entrada. Ningún mensaje obsoleto sustituye la parada pendiente. Las operaciones
+descartadas expiran sin ACK de ejecución; el estado queda sin confirmar hasta una
+nueva lectura/adquisición. Las colas normal y de respuestas siguen acotadas a 4 y 8.
+
+### Permisos de secretos nuevos
+
+La provisión conserva el directorio privado en `0700` y asigna únicamente los archivos
+nuevos `passwords` y `health-password` a UID/GID 1883 con modo `0600`, para que el
+broker lea sus credenciales sin acceso global. El script se niega a sobrescribir
+`passwords` existente. La prueba Mosquitto verifica esos permisos en archivos
+temporales, autenticación, healthcheck y rechazo anónimo. No se cambiaron secretos
+ya provisionados; si provienen del procedimiento anterior con `0644`, su propietario
+debe revisar los metadatos y adaptar permisos/propietario en una ventana manual.
+La ACL versionada es pública y no contiene contraseñas; un aviso de lectura global
+de la ACL no equivale a exposición del archivo privado `passwords`.

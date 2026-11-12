@@ -5,7 +5,7 @@ void enqueue(const char* path, const String& body, bool urgent=false, uint32_t g
  JsonDocument value; assert(!deserializeJson(value,body)); doc["body"]=value;
  MqttFrame frame{}; frame.generation=generation; frame.received=millis()-age;
  serializeJson(doc,frame.payload,sizeof(frame.payload));
- assert((urgent?xQueueOverwrite(mqttUrgent,&frame):xQueueSend(mqttNormal,&frame,0))==pdTRUE);
+ assert(queueMqttFrame(frame,urgent,false,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 }
 void connectTransport() {
  mqttGeneration.store(1); mqttOnline.store(true); tickMqtt();

@@ -7,6 +7,7 @@
 struct MqttFrame { char payload[2048]; uint32_t generation, received; bool telemetry; };
 QueueHandle_t mqttNormal, mqttUrgent, mqttReplies;
 std::atomic<bool> mqttOnline{false};
+std::atomic<bool> mqttUrgentOverflow{false};
 std::atomic<uint32_t> mqttGeneration{0};
 bool mqttHandling = false;
 String mqttBody, mqttRequestId, mqttConnection;
@@ -34,7 +35,11 @@ bool queueMqttFrame(const MqttFrame& frame, bool urgent, bool retained, const St
   if (urgent) {
     String command = doc["body"]["command"].as<String>();
     if (command != "STOP" && command != "HOLD") return false;
-    return xQueueOverwrite(mqttUrgent, &frame) == pdTRUE;
+    // Preserve the first valid stop: a stale later packet must never overwrite it.
+    // Saturation fails closed on the actuator task, without acknowledging execution.
+    if (xQueueSend(mqttUrgent, &frame, 0) == pdTRUE) return true;
+    mqttUrgentOverflow.store(true);
+    return false;
   }
   return xQueueSend(mqttNormal, &frame, 0) == pdTRUE;
 }
@@ -118,6 +123,12 @@ void tickMqtt() {
     mqttStop(); mqttHandledGeneration = generation;
   }
   if (WiFi.status() != WL_CONNECTED || !mqttOnline.load() || !mqttNormal || !mqttUrgent) return;
+  if (mqttUrgentOverflow.exchange(false)) {
+    mqttStop();
+    xQueueReset(mqttNormal); // Invalidate queued acquisitions as well as motion.
+    xQueueReset(mqttUrgent);
+    return; // Discarded operations expire; never fabricate a successful ACK.
+  }
   MqttFrame frame{};
   bool urgent = xQueueReceive(mqttUrgent, &frame, 0) == pdTRUE;
   if (!urgent && xQueueReceive(mqttNormal, &frame, 0) != pdTRUE) {

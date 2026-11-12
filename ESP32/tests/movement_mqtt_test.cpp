@@ -23,5 +23,24 @@ int main() {
  enqueue("/control-session","{}",false,2); tickMqtt(); assert(gate.active);
  enqueue("/movement",body("FORWARD",1),false,2); tickMqtt();
  mockTime+=1600; checkMovementSafety(true,millis()); assert(driveDirection==0 && !gate.active);
+ // A stale stop cannot overwrite the current stop in a full urgent mailbox.
+ enqueue("/control-session","{}",false,2); tickMqtt();
+ enqueue("/movement",body("FORWARD",1),false,2); tickMqtt();
+ enqueue("/movement",body("STOP",2),true,2);
+ MqttFrame stale{};
+ strcpy(stale.payload,"{\"connectionId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"body\":{\"command\":\"STOP\"}}");
+ assert(!queueMqttFrame(stale,true,false,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+ assert(mqttUrgentOverflow.load());
+ tickMqtt(); assert(!gate.active && driveDirection==0);
+ // Fill the normal mailbox and response queue; neither may block priority STOP.
+ enqueue("/control-session","{}",false,2); tickMqtt();
+ enqueue("/movement",body("FORWARD",1),false,2); tickMqtt();
+ MqttFrame normal{}; normal.generation=2; normal.received=millis();
+ strcpy(normal.payload,"{\"id\":\"saturated\",\"connectionId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"method\":\"GET\",\"path\":\"/status\",\"body\":{}}");
+ for(int i=0;i<4;i++) assert(queueMqttFrame(normal,false,false,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+ assert(!queueMqttFrame(normal,false,false,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+ for(int i=0;i<8;i++) xQueueSend(mqttReplies,&normal,0);
+ enqueue("/movement",body("STOP",2),true,2); tickMqtt();
+ assert(!gate.active && driveDirection==0);
  cleanupQueues(); puts("PASS MQTT movement: exclusive mode, duplicate, STOP priority, disconnect, reconnect, queue age, watchdog");
 }

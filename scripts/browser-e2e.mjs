@@ -3,6 +3,9 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdirSync} from 'node:fs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const execute=promisify(execFile);
 const base = process.env.PLANT_BASE_URL ?? 'http://127.0.0.1:18080';
 const device = process.env.PLANT_DEVICE_URL;
 assert.ok(device, 'Set PLANT_DEVICE_URL to the verified simulation device URL');
@@ -12,7 +15,24 @@ const safety = await status.json();
 assert.equal(safety.mode,'simulation'); assert.equal(safety.hardwareOutputEnabled,false);
 const browser = await chromium.launch({headless:true, ...(process.env.CHROME_PATH ? {executablePath:process.env.CHROME_PATH} : {})});
 const context = await browser.newContext();
+await context.addInitScript(() => {
+    window.e2eScheduler = {maxDelayMs:0};
+    let last=performance.now();
+    setInterval(()=>{const now=performance.now(); window.e2eScheduler.maxDelayMs=Math.max(window.e2eScheduler.maxDelayMs,now-last-100);last=now;},100);
+});
 const page = await context.newPage();
+const trace=[];
+let phase='scenario';
+const traced=new Map();
+page.on('request', request=>{
+    if(new URL(request.url()).pathname==='/movement' && request.method()==='POST') {
+        const {command,sequence,steering}=request.postDataJSON();
+        const event={phase,command,sequence,steering,at:performance.now()};
+        traced.set(request,event); trace.push(event); if(trace.length>4096) trace.shift();
+    }
+});
+page.on('response',response=>{const event=traced.get(response.request());if(event){event.status=response.status();event.elapsedMs=performance.now()-event.at;traced.delete(response.request());}});
+page.on('requestfailed',request=>{const event=traced.get(request);if(event){event.failure=request.failure()?.errorText;traced.delete(request);}});
 // Bound asynchronous route gates too, so a missing request cannot hang CI.
 const deadlineTimer = setTimeout(() => { console.error('Browser scenario exceeded 120 seconds'); void browser.close(); }, 120000);
 const errors=[]; page.on('pageerror',error=>errors.push(error.message));
@@ -20,7 +40,8 @@ const movement=[];
 page.on('request',request=>{if(new URL(request.url()).pathname==='/movement' && request.method()==='POST') movement.push(request.postDataJSON());});
 const text = selector => page.locator(selector).innerText();
 async function contains(selector, expected) {
-    await page.waitForFunction(([s,t])=>document.querySelector(s)?.textContent?.includes(t), [selector,expected], {timeout:10000});
+    try { await page.waitForFunction(([s,t])=>document.querySelector(s)?.textContent?.includes(t), [selector,expected], {timeout:10000}); }
+    catch (error) { throw new Error(`${selector}: expected ${expected}; actual ${await page.locator(selector).textContent()}`, {cause:error}); }
 }
 async function key(key, expected){await page.keyboard.down(key);await contains('#movementStatus',`${expected} accepted`);}
 try {
@@ -33,20 +54,20 @@ try {
     const csrfGate=new Promise(resolve=>{releaseCsrf=resolve;});
     await page.route('**/csrf',async route=>{await csrfGate;await route.continue();});
     const response=await page.goto(base+'/'); assert.equal(response.status(),200);
-    await contains('#movementStatus','Ready for keyboard control');
+    assert.equal(await page.locator('#movementStatus').count(),0);
+    await page.getByRole('button',{name:'Datos',exact:true}).waitFor();
     assert.equal(await page.locator('#SignIn, #SignOut, #authStatus').count(),0);
     assert.equal(await page.locator('#CaptureData').isEnabled(),true);
     console.log('E2E: First capture');
-    // First capture and movement share a single CSRF bootstrap and anonymous session.
+    // Datos owns capture; movement is mounted only after selecting its tab.
     assert.equal(movement.length,0);
-    const firstActions=Promise.all([page.locator('#CaptureData').click(), key('w','FORWARD')]);
-    await page.waitForFunction(()=>document.querySelector('#CaptureData').disabled &&
-        document.querySelector('#movementStatus').textContent.includes('Connecting'));
-    assert.equal(csrfRequests,1);assert.equal(movement.length,0);
-    releaseCsrf();await firstActions;await page.unroute('**/csrf');
-    await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
+    await page.locator('#CaptureData').click();
+    await page.waitForFunction(()=>document.querySelector('#CaptureData').disabled);
+    assert.equal(csrfRequests,1); assert.equal(movement.length,0);
+    releaseCsrf();
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
-    await contains('#sensorStatus','Software simulated measurements');
+    await page.unroute('**/csrf');
+    await contains('#sensorStatus','Lecturas simuladas por software');
     await contains('#soilMoisture','45 %');
     assert.equal(await text('#humidity'),'60.0');
     assert.equal(await page.locator('.sensor-card').count(),4);
@@ -57,12 +78,33 @@ try {
     console.log('E2E: Bootstrap creates');
     // Bootstrap creates no robot epoch or motion. Later actions reuse its CSRF promise.
     assert.equal(csrfRequests,1);
-    await key('w','FORWARD'); await key('a','LEFT');
+    await page.getByRole('button',{name:'Movimiento',exact:true}).click();
+    await contains('#movementStatus','Ready for keyboard control');
+    await key('w','FORWARD'); await page.keyboard.down('a');
+    await contains('#movementStatus','steering LEFT — FORWARD accepted');
     await page.keyboard.up('a'); await contains('#movementStatus','FORWARD accepted');
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
     for (const [letter,command] of [['s','BACKWARD'],['d','RIGHT']]) {
         await key(letter,command); await page.keyboard.up(letter); await contains('#movementStatus','STOP accepted');
     }
+    for (const [drive, command] of [['w','FORWARD'],['s','BACKWARD']]) {
+      for (const [turn, steering] of [['a','LEFT'],['d','RIGHT']]) {
+        await key(drive,command); await page.keyboard.down(turn);
+        await contains('#movementStatus',`steering ${steering} — ${command} accepted`);
+        await page.keyboard.up(turn); await contains('#movementStatus',`steering CENTER — ${command} accepted`);
+        await page.keyboard.up(drive); await contains('#movementStatus','STOP accepted');
+      }
+    }
+    // Real sensor simulator -> Spring -> confirmed servo state, with a brief CENTER keypress.
+    await page.keyboard.down('e'); await contains('.servo-reading','Girando +');
+    await page.waitForTimeout(180);
+    await page.keyboard.up('e'); await contains('.servo-reading','Detenido');
+    await page.keyboard.down('r'); await page.keyboard.up('r');
+    await contains('.servo-reading','100°'); await contains('.servo-reading','Detenido');
+    await page.keyboard.down('q'); await contains('.servo-reading','Girando −');
+    await page.getByRole('button',{name:'Datos',exact:true}).click(); await page.keyboard.up('q');
+    await page.getByRole('button',{name:'Movimiento',exact:true}).click();
+    await contains('.servo-reading','Detenido');
     // Exercise STOP while a key is held, then ensure release cannot restart movement.
     await key('w','FORWARD'); await page.locator('#StopMovement').click();
     await contains('#movementStatus','STOP accepted'); await page.keyboard.up('w');
@@ -73,9 +115,29 @@ try {
     await page.waitForTimeout(350); assert.equal(movement.length,stoppedCount);
     console.log('E2E: Heartbeats keep');
     // Heartbeats keep a held direction alive past the firmware watchdog window.
+    phase='heartbeat';
     await key('w','FORWARD'); await page.waitForTimeout(3200);
-    assert.ok(movement.filter(r=>r.command==='FORWARD').length>=10);
+    const renewals=trace.filter(r=>r.phase==='heartbeat' && r.command==='FORWARD');
+    const gaps=renewals.slice(1).map((event,index)=>event.at-renewals[index].at);
+    const scheduler=await page.evaluate(()=>window.e2eScheduler);
+    console.log('Heartbeat evidence',JSON.stringify({acknowledged:renewals.filter(r=>r.status===200).length,maxGapMs:Math.max(0,...gaps),scheduler}));
+    assert.ok(renewals.filter(r=>r.status===200).length>=10,'At least ten ACKed renewals in this hold, excluding previous movements');
+    assert.ok(renewals.every(r=>!r.failure && (!r.status || r.status===200)),'Heartbeat failure must not be hidden until key release');
+    assert.ok(Math.max(0,...gaps)<1500,'Heartbeat scheduling exceeded the independent watchdog');
     await page.keyboard.up('w'); await contains('#movementStatus','STOP accepted');
+    phase='scenario';
+    if (process.env.PLANT_TEST_RENDERER_STALL === '1') {
+        // Deterministic CPU starvation of the renderer, not a longer device timeout.
+        await key('w','FORWARD');
+        await page.evaluate(()=>{const end=performance.now()+2200;while(performance.now()<end) {/* deliberate test stall */}});
+        await contains('#movementStatus','STOP unconfirmed');
+        const stopped=await (await fetch(device+'/status',{headers:{'X-Device-Token':process.env.DEVICE_TOKEN}})).json();
+        assert.equal(stopped.command,'STOP'); assert.equal(stopped.controlActive,false);
+        const count=movement.length;
+        await page.waitForTimeout(350); assert.equal(movement.length,count,'Renderer recovery must not resume motion');
+        await page.keyboard.up('w');
+        console.log('PASS renderer stall: independent watchdog STOP; no automatic resume');
+    }
     console.log('E2E: Browser blur');
     // Browser blur clears held keys; restoring focus does not restart.
     await key('a','LEFT'); await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
@@ -134,6 +196,7 @@ try {
     await contains('#movementStatus','STOP accepted');
     await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
     await page.keyboard.up('w');
+    await page.getByRole('button',{name:'Datos',exact:true}).click();
     const captureResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/sensors/capture');
     await page.locator('#CaptureData').click();
     assert.match(await text('#CaptureData'),/Capturando…/);
@@ -141,7 +204,7 @@ try {
     assert.equal(capture.predictionModel,'synthetic-five-crops-v2');
     assert.ok(['frijol','tomate','sandía','melón','lechuga'].includes(capture.prediction));
     assert.equal(capture.predictionStatus,'SUCCEEDED'); assert.equal(capture.simulated,true); assert.ok(capture.id);
-    await contains('#sensorStatus','Software simulated measurements');
+    await contains('#sensorStatus','Lecturas simuladas por software');
     await contains('#soilMoisture','45 %');
     assert.equal(await text('#humidity'),'60.0');
     assert.equal(await page.locator('.sensor-card').count(),4);
@@ -152,8 +215,8 @@ try {
     // Explicit UI fixture for mixed physical/demo provenance; no claim of hardware measurement.
     await page.route('**/sensors/capture', route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...capture,temperatureSource:'dht11',humiditySource:'dht11',phSource:'potentiometer'})}));
     await page.locator('#CaptureData').click();
-    await contains('#sensorStatus','pH (potentiometer simulation)');
-    await contains('#sensorStatus','Temperature: dht11; humidity: dht11');
+    await contains('#sensorStatus','pH simulado con potenciómetro');
+    assert.equal(capture.temperatureSource,'software');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await page.unroute('**/sensors/capture');
     // Failure rendering uses a deliberately failed transport; successful paths above are unmocked.
@@ -162,6 +225,7 @@ try {
     await contains('#prediction','Sin nueva recomendación');
     await page.waitForFunction(()=>!document.querySelector('#CaptureData').disabled);
     await page.unroute('**/sensors/capture');
+    await page.getByRole('button',{name:'Movimiento',exact:true}).click();
     await page.route('**/movement/session',route=>route.fulfill({status:502,contentType:'application/problem+json',body:'{"status":502}'}));
     await page.keyboard.down('w'); await contains('#movementStatus','Device unreachable');
     const failureCount=movement.length; await page.waitForTimeout(400); assert.equal(movement.length,failureCount);
@@ -176,6 +240,7 @@ try {
     assert.equal(movement.length,failedMovementCount);
     await page.keyboard.up('w');await page.unroute('**/movement');
     await key('a','LEFT');await page.keyboard.up('a');await contains('#movementStatus','STOP accepted');
+    await page.getByRole('button',{name:'Datos',exact:true}).click();
     assert.equal(await page.locator('#CaptureData').isEnabled(),true);
     assert.deepEqual(errors,[]);
     console.log('E2E: A missing calibration');
@@ -225,12 +290,55 @@ try {
         await page.setViewportSize({width:1280,height:900});
     }
     // Pointer/touch-style press and cancellation use the same safe controller.
+    await page.getByRole('button',{name:'Movimiento',exact:true}).click();
     const forward=page.getByRole('button',{name:'Adelante',exact:true});
     await forward.scrollIntoViewIfNeeded();
     const box=await forward.boundingBox();
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
     await page.mouse.down();await contains('#movementStatus','FORWARD accepted');
     await page.mouse.up();await contains('#movementStatus','STOP accepted');
+    if(process.env.PLANT_TEST_BROKER) {
+        const broker=process.env.PLANT_TEST_BROKER;
+        assert.match(broker,/^plant-browser-mqtt-[0-9a-f]{8}$/);
+        await key('w','FORWARD');
+        await execute('docker',['stop',broker]);
+        await contains('#movementStatus','Connection lost');
+        const deadline=performance.now()+2000;
+        let state;
+        do {
+            state=await (await fetch(device+'/status',{headers:{'X-Device-Token':process.env.DEVICE_TOKEN}})).json();
+            if(!state.controlActive && state.command==='STOP') break;
+            await new Promise(resolve=>setTimeout(resolve,25));
+        } while(performance.now()<deadline);
+        assert.equal(state.controlActive,false); assert.equal(state.command,'STOP');
+        const before=movement.length;
+        await execute('docker',['start',broker]);
+        let ready=false;
+        const reconnectDeadline=performance.now()+10000;
+        while(performance.now()<reconnectDeadline) {
+            if((await context.request.get(base+'/sensor-servo')).status()===200) {ready=true;break;}
+            await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        assert.ok(ready,'Broker and device presence must recover');
+        await page.waitForTimeout(350); assert.equal(movement.length,before,'Reconnect must not replay motion');
+        await page.keyboard.up('w');
+        await key('a','LEFT'); await page.keyboard.up('a'); await contains('#movementStatus','STOP accepted');
+        console.log('PASS broker outage/restart: watchdog STOP, fresh presence, no automatic resume');
+    }
+    await key('w','FORWARD');
+    const wifi=online=>fetch(device+'/simulation/wifi',{method:'POST',headers:{'X-Device-Token':process.env.DEVICE_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({online})});
+    assert.equal((await wifi(false)).status,200);
+    await contains('#movementStatus','Connection lost');
+    const disconnected=await (await fetch(device+'/status',{headers:{'X-Device-Token':process.env.DEVICE_TOKEN}})).json();
+    assert.equal(disconnected.command,'STOP'); assert.equal(disconnected.controlActive,false);
+    await page.waitForTimeout(350);
+    const disconnectedCount=movement.length;
+    assert.equal((await wifi(true)).status,200);
+    await page.waitForTimeout(1250);
+    assert.equal(movement.length,disconnectedCount,'Wi-Fi recovery must not resume held movement');
+    await page.keyboard.up('w');
+    await key('a','LEFT'); await page.keyboard.up('a'); await contains('#movementStatus','STOP accepted');
+    console.log('PASS simulated Wi-Fi loss/recovery: STOP and fresh explicit control');
     console.log('E2E: Actual page abandonment');
     // Actual page abandonment must deliver a keepalive STOP and never reacquire.
     await key('w','FORWARD');
@@ -248,4 +356,7 @@ try {
     assert.equal(stopped.command,'STOP');assert.equal(stopped.controlActive,false);
     assert.ok(performance.now()-leavingAt<750,'STOP must reach the device before watchdog expiration');
     console.log('PASS browser E2E: anonymous dashboard, CSRF, cookies, WASD, priority/release, STOP, heartbeats, blur, typing guard, capture, real ML, persisted reload, errors');
+} catch(error) {
+    console.error('E2E diagnostic',JSON.stringify({trace:trace.slice(-35),scheduler:await page.evaluate(()=>window.e2eScheduler).catch(()=>null)}));
+    throw error;
 } finally { clearTimeout(deadlineTimer); await context.close(); await browser.close(); }

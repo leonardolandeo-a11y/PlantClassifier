@@ -17,5 +17,12 @@ int main() {
  enqueue("/servo",body("INCREASE",2),false,1); tickMqtt(); assert(!servoActive);
  enqueue("/servo-session","{}",false,2); tickMqtt(); enqueue("/servo",body("INCREASE",1),false,2); tickMqtt();
  mockTime+=1000; servoTick(); assert(!servoActive && sensorDirection==0);
+ enqueue("/servo-session","{}",false,2); tickMqtt();
+ enqueue("/servo",body("INCREASE",1),false,2); tickMqtt();
+ enqueue("/servo",body("HOLD",2),true,2);
+ MqttFrame stale{};
+ strcpy(stale.payload,"{\"connectionId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"body\":{\"command\":\"HOLD\"}}");
+ assert(!queueMqttFrame(stale,true,false,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+ tickMqtt(); assert(!servoActive && sensorDirection==0);
  cleanupQueues(); puts("PASS MQTT sensor: exclusive mode, HOLD priority, disconnect, reconnect, watchdog");
 }

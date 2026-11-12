@@ -22,11 +22,35 @@ class DeviceState:
         self.speed = 0
         self.steering = 'CENTER'
         self.lock = threading.Lock()
+        self.wifi_online = True
+        self.servo_epoch = secrets.randbits(31) or 1
+        self.servo_sequence = 0
+        self.servo_active = False
+        self.servo_angle = 100
+        self.servo_command = 'HOLD'
+        self.servo_last = self.now()
+        self.servo_step = self.now()
 
     def now(self):
         return int((time.monotonic() - self.started) * 1000) & 0xffffffff
 
+    def servo_status(self):
+        labels = {'INCREASE':'increasing','DECREASE':'decreasing','CENTER':'centering','HOLD':'holding'}
+        return {'angle':self.servo_angle,'state':labels[self.servo_command], 'epoch':self.servo_epoch,
+                'sequence':self.servo_sequence,'deviceTimeMs':self.now()}
+
     def expire(self):
+        if self.servo_active:
+            now = self.now()
+            if ((now - self.servo_last) & 0xffffffff) >= 1000:
+                self.servo_active = False
+                self.servo_command = 'HOLD'
+            steps = ((now - self.servo_step) & 0xffffffff) // 15
+            if steps:
+                self.servo_step = now
+                target = {'INCREASE':130,'DECREASE':70,'CENTER':100,'HOLD':self.servo_angle}[self.servo_command]
+                self.servo_angle += max(-2*steps,min(2*steps,target-self.servo_angle))
+                if self.servo_angle == target: self.servo_command = 'HOLD'
         if self.session and ((self.now() - self.last) & 0xffffffff) > 1500:
             self.session = None
             self.command, self.speed = 'STOP', 0
@@ -64,18 +88,23 @@ def make_server(host, port, token, role="movement"):
                 return
             with state.lock:
                 state.expire()
-                if self.path == '/status' and role == 'sensor':
+                if self.path == '/servo' and role == 'sensor':
+                    self.reply(200,state.servo_status())
+                elif self.path == '/status' and role == 'sensor':
                     self.reply(200, {'status': 'online', 'role': 'sensor', 'mode': 'simulation',
-                                    'simulated': True, 'hardwareOutputEnabled': False,
+                                    'simulated': True, 'hardwareOutputEnabled': False,'wifiOnline':state.wifi_online,
                                     'temperatureSource': 'software', 'humiditySource': 'software', 'phSource': 'software', 'soilMoisture': 45.0, 'soilMoistureSource': 'software'})
                 elif self.path == '/status':
                     self.reply(200, {'status': 'online', 'mode': 'simulation', 'simulated': True,
                                     'role': role, 'hardwareOutputEnabled': False,
+                                    'wifiOnline':state.wifi_online,
                                     'controlActive': state.session is not None,
                                     'command': state.command, 'speed': state.speed,
                                     'protocolVersion': 2, 'steering': state.steering,
                                     'steeringAngle': {'LEFT':70,'CENTER':100,'RIGHT':130}[state.steering],
                                     'physicalMotionVerified': False})
+                elif not state.wifi_online:
+                    self.reply(503,{'error':'Simulated Wi-Fi disconnected'})
                 elif self.path == '/capture' and role == 'sensor':
                     print('[SENSOR] SIMULATION ph=6.5 temperature=25.0 humidity=60.0', flush=True)
                     self.reply(200, {'ph': 6.5, 'temperature': 25.0, 'humidity': 60.0, 'simulated': True,
@@ -84,10 +113,53 @@ def make_server(host, port, token, role="movement"):
                     self.reply(404, {'error': 'Not found'})
 
         def do_POST(self):
-            if role == "sensor":
-                self.reply(404, {"error": "Not found"})
-                return
             if not self.authorized():
+                return
+            with state.lock:
+                if self.path == '/simulation/wifi':
+                    try:
+                        length=int(self.headers.get('Content-Length','0'))
+                        if not 0 < length <= 64: raise ValueError()
+                        data=json.loads(self.rfile.read(length))
+                        if type(data.get('online')) is not bool: raise ValueError()
+                    except (ValueError,TypeError):
+                        self.reply(400,{'error':'Invalid simulation fixture'}); return
+                    state.wifi_online=data['online']
+                    if not state.wifi_online:
+                        state.session=None; state.command='STOP'; state.speed=0; state.steering='CENTER'
+                        state.servo_active=False; state.servo_command='HOLD'
+                    self.reply(200,{'simulated':True,'online':state.wifi_online}); return
+                if not state.wifi_online:
+                    self.reply(503,{'error':'Simulated Wi-Fi disconnected'}); return
+            if role == "sensor":
+                with state.lock:
+                    state.expire()
+                    if self.path == '/servo-session':
+                        state.servo_epoch = (state.servo_epoch + 1) & 0xffffffff or 1
+                        state.servo_sequence = 0
+                        state.servo_active = True
+                        state.servo_last = state.servo_step = state.now()
+                        state.servo_command = 'HOLD'
+                    elif self.path == '/servo':
+                        try:
+                            length = int(self.headers.get('Content-Length','0'))
+                            if not 0 < length <= 256: raise ValueError()
+                            data = json.loads(self.rfile.read(length))
+                            command = data['command']
+                            if command not in ('INCREASE','DECREASE','CENTER','HOLD'): raise ValueError()
+                            if any(type(data[k]) is not int for k in ('epoch','sequence','deadlineMs')): raise ValueError()
+                        except (ValueError,KeyError,TypeError):
+                            self.reply(400,{'error':'Invalid servo command'}); return
+                        remaining = (data['deadlineMs'] - state.now()) & 0xffffffff
+                        if (not state.servo_active or data['epoch'] != state.servo_epoch or data['sequence'] <= state.servo_sequence
+                                or (command != 'HOLD' and not 0 < remaining <= 1000)):
+                            self.reply(409,{'error':'Expired servo control'}); return
+                        state.servo_sequence = data['sequence']; state.servo_last = state.now()
+                        state.servo_command = 'HOLD' if command == 'CENTER' and state.servo_angle == 100 else command
+                        if command == 'HOLD': state.servo_active = False
+                    else:
+                        self.reply(404,{'error':'Not found'}); return
+                    self.reply(200,state.servo_status())
                 return
             with state.lock:
                 state.expire()

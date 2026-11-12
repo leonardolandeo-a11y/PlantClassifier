@@ -18,11 +18,13 @@ final class DeviceResponse {
     private static JsonNode read(RestClient.RequestHeadersSpec<?> request, boolean movement) {
         return request.exchange((req, response) -> {
             int status = response.getStatusCode().value();
-            if (status == 409) {
+            if (status == 409 || status == 503) {
                 byte[] body = response.getBody().readNBytes(8193);
                 if (body.length <= 8192) {
                     try {
                         var error = JSON.readTree(body);
+                        if (status == 503 && error != null && error.path("error").asString("").startsWith("DHT11 or pH ADC"))
+                            throw new SystemFailure(502, "sensor-invalid", "Sensor acquisition failed or returned invalid values; no measurement saved");
                         if (error != null && error.path("error").asString("").startsWith("capture-deferred:"))
                             throw new SystemFailure(409, "capture-deferred", "Suelta el servo para obtener una muestra nueva; el sensor no está averiado.");
                         if (movement && error != null && error.path("error").asString("").startsWith("Reversal interlock:"))

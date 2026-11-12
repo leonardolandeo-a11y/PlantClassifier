@@ -16,6 +16,8 @@ unsigned long lastSample = 0;
 bool sampled = false;
 bool sampleValid = false;
 SensorSample sample;
+char sampleBoot[33];
+uint32_t sampleSequence = 0;
 
 void sources(JsonDocument& doc) {
   doc["temperatureSource"] = "dht11";
@@ -33,6 +35,7 @@ void captureData() {
     servoTick();
     if (servoActive) { protocolError(409, "capture-deferred: release servo control before acquiring a fresh sample"); return; }
     sampled = true;
+    ++sampleSequence;
     lastSample = now;
     sampleValid = readSensors(dht, [](int pin) { return analogRead(pin); }, sample);
   }
@@ -47,7 +50,11 @@ void captureData() {
   if (isfinite(sample.soilMoisture)) doc["soilMoisture"] = sample.soilMoisture;
   doc["soilRaw"] = sample.soilRaw;
   doc["soilStatus"] = sample.soilRaw < 0 ? "invalid" : isfinite(sample.soilMoisture) ? "calibrated" : "calibration-pending";
-  doc["sampleAgeMs"] = now - lastSample;
+  doc["deviceId"] = "sensor"; // One sensor role per installation; boot nonce namespaces samples.
+  char sampleId[48];
+  snprintf(sampleId, sizeof(sampleId), "%s-%lu", sampleBoot, (unsigned long)sampleSequence);
+  doc["sampleId"] = sampleId;
+  doc["sampleAgeMs"] = uint32_t(millis() - lastSample);
   String body;
   serializeJson(doc, body);
   mqttReply(200, "application/json", body);
@@ -75,6 +82,7 @@ void handleStatus() {
 }
 void setup() {
   Serial.begin(115200);
+
   dht.begin();
   setupSensorServo();
   analogReadResolution(PH_ADC_BITS);
@@ -86,6 +94,9 @@ void setup() {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Generate the sample namespace with the Wi-Fi entropy source enabled.
+  snprintf(sampleBoot, sizeof(sampleBoot), "%08lx%08lx%08lx%08lx", (unsigned long)esp_random(),
+      (unsigned long)esp_random(), (unsigned long)esp_random(), (unsigned long)esp_random());
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) delay(500);
   Serial.print("[SENSOR] IP: "); Serial.println(WiFi.localIP());
