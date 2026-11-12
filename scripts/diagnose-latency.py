@@ -34,6 +34,7 @@ def main():
         parser.error('count 1..10000, interval >= .1 s, timeout .05..5 s')
     samples, processing, failures, states = [], [], [], []
     client = None
+    connection_error = None
     presence = {}
     incoming = queue.Queue(maxsize=64)
     if args.transport == 'mqtt':
@@ -63,16 +64,21 @@ def main():
                 pass
         client.on_connect, client.on_message = connected, message
         client.on_disconnect = lambda *unused: presence.clear()
-        client.connect(args.host, args.port or 1883, 5)
-        client.loop_start()
-        until = time.monotonic() + 5
-        while not presence and time.monotonic() < until:
-            time.sleep(.05)
+        try:
+            client.connect(args.host, args.port or 1883, 5)
+            client.loop_start()
+            until = time.monotonic() + 5
+            while not presence and time.monotonic() < until:
+                time.sleep(.05)
+        except OSError as error:
+            connection_error = error
     try:
         for _ in range(args.count):
             started = time.monotonic()
             try:
                 if client:
+                    if connection_error is not None:
+                        raise connection_error
                     state = presence.copy()
                     if time.monotonic() - state.get('seen', 0) > 3:
                         raise TimeoutError('No fresh ESP32 presence')
@@ -112,7 +118,7 @@ def main():
                   note='RTT includes client, broker, network, firmware queue and ACK. Not mechanical motion or one-way latency.')
     with open(args.output, 'w', encoding='utf8') as output:
         json.dump(result, output, indent=2)
-    print(json.dumps(result['round_trip'], indent=2))
+    print(json.dumps(dict(result['round_trip'], errors=failures), indent=2))
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 # Migración MQTT de laboratorio
 
-Cambios locales en main, sin commits ni despliegue. No se han cargado sketches ni accionado dispositivos.
+Implementación en main. La continuación parte del commit `f472cbd`; esta verificación no crea commits ni despliega. No se han cargado sketches ni accionado dispositivos.
 
 ## Arquitectura y seguridad
 
@@ -73,6 +73,8 @@ Rollback, una vez restaurado firmware HTTP: `docker compose -p plantclassifier-l
 ```bash
 python3 -m venv .venv-diagnostics
 .venv-diagnostics/bin/pip install -r scripts/requirements-diagnostics.txt
+# Fase inicial: broker aislado en loopback y placas simuladas, sin hardware.
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 DIAGNOSTIC_PYTHON="$PWD/.venv-diagnostics/bin/python" bash scripts/test-mqtt.sh
 # Introducir valores técnicos sin escribirlos en argumentos de procesos ni historial.
 read -rp 'IP LAN del broker: ' BROKER_LAN
 read -rsp 'Contraseña técnica backend MQTT: ' MQTT_PASSWORD; echo
@@ -88,7 +90,7 @@ python3 scripts/diagnose-latency.py http --host "$DEVICE_LAN" --count 100 --outp
 unset DEVICE_TOKEN
 ```
 
-Estos scripts solo envían GET /status: no adquieren sesiones, no capturan/guardan muestras ni accionan nada. Entregan P50/P95/P99/máximo/pérdidas, muestras crudas, cambios de presencia y telemetría. `brokerRoundTripMs` en state mide eco iniciado por ESP32; la resta `ackMs-receivedMs` mide cola y handler en su reloj. El RTT del script también incluye cliente/broker/red/retorno. No permite inferir latencia unidireccional ni movimiento mecánico. Comparar HTTP y MQTT con misma placa, señal Wi-Fi, carga, número de muestras e intervalo; el GET es una referencia de transporte, no una comparación de actuación.
+El diagnóstico de latencia solo envía GET /status (la suite test-mqtt.sh también prueba comandos exclusivamente en placas simuladas): no adquieren sesiones, no capturan/guardan muestras ni accionan nada. Entrega P50/P95/P99/máximo/pérdidas y errores en consola; el JSON añade muestras crudas, cambios de presencia y telemetría. Una conexión inicial rechazada por el broker también genera el informe de pérdidas y errores. `brokerRoundTripMs` en state mide eco iniciado por ESP32; la resta `ackMs-receivedMs` mide cola y handler en su reloj. El RTT del script también incluye cliente/broker/red/retorno. No permite inferir latencia unidireccional ni movimiento mecánico. Comparar HTTP y MQTT con misma placa, señal Wi-Fi, carga, número de muestras e intervalo; el GET es una referencia de transporte, no una comparación de actuación.
 
 Para captura/BD/ML, habilita DEBUG en `com.codewithmosh.plantclassifier.service.SensorDataService` y en `com.codewithmosh.plantclassifier.mqtt.MqttDeviceTransport` (variables Spring `LOGGING_LEVEL_COM_CODEWITHMOSH_PLANTCLASSIFIER_SERVICE_SENSORDATASERVICE=DEBUG` y `LOGGING_LEVEL_COM_CODEWITHMOSH_PLANTCLASSIFIER_MQTT_MQTTDEVICETRANSPORT=DEBUG`). Agrega explícitamente esas variables al servicio app mediante un override local si se ejecuta en Docker. Procesa logs:
 
@@ -124,3 +126,16 @@ Los scripts de PostgreSQL/MQTT crean contenedores aislados en loopback; solo eli
 Medición obtenida en una ejecución local del test `readOnlyLoopbackLatencySample`: 100 GET simulados, 0 pérdidas; P50 0.996 ms, P95 41.458 ms, P99 41.808 ms, máximo 43.151 ms. Es JVM ↔ Mosquitto Docker ↔ mock JVM en loopback; no demuestra mejora frente a HTTP ni representa Wi-Fi o mecánica. Cada ejecución imprime una nueva muestra.
 
 Pendiente físicamente: jitter y tiempos LAN, apagado broker/Wi-Fi/backend con hardware alimentado de forma segura, consumo/stack FreeRTOS, alimentación MG996R, neutral y deadtime, calibración de suelo, fallos DHT y validación Android. No se ejecutaron pruebas de movimiento real.
+
+## Cierre de verificación — 2026-11-11
+
+- Maven: BUILD SUCCESS, 67 pruebas, 0 fallos, 0 errores, 9 omitidas (8 MQTT ejecutadas aparte; 1 benchmark HTTP opcional).
+- Frontend: 108 pruebas, lint y build aprobados; Expo: TypeScript y exportación Android aprobados.
+- Firmware: ambas placas compiladas en HTTP/MQTT; Movement también en rama hardware; mocks de prioridad, exclusividad, reconexión y watchdog aprobados. Sin carga física.
+- Docker: imagen `plantclassifier:mqtt-validation` construida; Compose validado sin secretos reales. Smoke de esa imagen aprobado con dispositivos HTTP simulados, PostgreSQL temporal y ML real.
+- PostgreSQL: 4 pruebas adicionales, 0 fallos/errores/omisiones.
+- MQTT: 8 pruebas repetidas al validar el diagnóstico corregido, 0 fallos/errores/omisiones. Diagnósticos HTTP/MQTT y broker rechazando conexión aprobados.
+- Última muestra loopback: 100 solicitudes, 0 pérdidas, P50 0.937 ms, P95 41.694 ms, P99 41.880 ms, máximo 42.323 ms. No son mediciones físicas.
+- Configuración Mosquitto: healthcheck y rechazo anónimo aprobados en la verificación previa, con credenciales temporales.
+
+No se repitieron compilaciones ni pruebas de frontend/Expo/firmware ya aprobadas porque sus fuentes no cambiaron en esta continuación. Las validaciones físicas y móviles indicadas arriba siguen pendientes.

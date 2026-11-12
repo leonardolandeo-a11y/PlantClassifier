@@ -30,6 +30,17 @@ with tempfile.TemporaryDirectory() as work:
                    env={**os.environ,'DEVICE_TOKEN':'mock-only'},check=True,stdout=subprocess.DEVNULL)
     assert json.load(open(out))['round_trip']['received']==3
 server.shutdown()
+# A refused broker must still produce a usable loss/error report.
+import socket
+with socket.socket() as unavailable, tempfile.TemporaryDirectory() as work:
+    unavailable.bind(('127.0.0.1', 0))  # Bound but not listening; no real broker.
+    out=str(pathlib.Path(work)/'offline.json')
+    completed=subprocess.run([sys.executable,str(ROOT/'diagnose-latency.py'),'mqtt','--host','127.0.0.1',
+        '--port',str(unavailable.getsockname()[1]),'--count','3','--interval','.1','--output',out],
+        env={**os.environ,'MQTT_PASSWORD':'mock-only'},check=True,capture_output=True,text=True)
+    result=json.load(open(out))
+    assert result['round_trip']['losses']==3 and result['round_trip']['p99_ms'] is None
+    assert len(result['errors'])==3 and len(json.loads(completed.stdout)['errors'])==3
 if 'MQTT_TEST_URL' in os.environ:
     import paho.mqtt.client as mqtt
     from urllib.parse import urlparse
