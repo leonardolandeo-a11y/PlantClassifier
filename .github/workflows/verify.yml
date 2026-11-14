@@ -45,6 +45,7 @@ jobs:
       - run: bash scripts/test-mosquitto-config.sh
       - run: npm ci --prefix mobile
       - run: npm run typecheck --prefix mobile && npm test --prefix mobile && npm run export --prefix mobile
+      - run: python scripts/test-start-wifi.py
       - run: python scripts/test-simulator.py
       - run: pip install -r MLClassification/requirements.txt
       - name: Python syntax, imports, prediction and evaluation

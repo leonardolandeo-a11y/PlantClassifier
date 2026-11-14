@@ -37,7 +37,7 @@ export function MovementScreen({client, scrollEpoch = 0}: {client: SensorClient 
     }, value => {if (alive && mounted.current && epoch === reportEpoch.current) setMessage(value);}, () => {if (alive) {controls.current?.stop(); setTouchEpoch(value => value + 1);}});
     const servo = createServoControl(client.request.bind(client), status => {
       if (alive) setServoMessage(`${status.angle}° · ${status.state} (comandado)`);
-    }, error => {if (alive) {setServoMessage(error); controls.current?.stop(); setTouchEpoch(value => value + 1);}});
+    }, (error, source) => {if (alive) {setServoMessage(error); if (source === 'control') {controls.current?.stop(); setTouchEpoch(value => value + 1);}}});
     const stop = () => {keys.clear(); movement.stop(); servo.stop();};
     controls.current = {
       press: key => {if (!focused.current || AppState.currentState !== 'active') return; keys.press(key); const next = keys.intent(); movement.set(next.command, next.steering);},

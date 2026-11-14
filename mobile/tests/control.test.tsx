@@ -20,7 +20,7 @@ it('uses one CSRF bootstrap, includes cookies, serializes mutations and never re
   expect(requests.filter(r=>r.url.endsWith('/csrf'))).toHaveLength(1);
   expect(requests.every(r=>r.options?.credentials==='include')).toBe(true);
   expect(requests[1].options?.headers).toEqual({'X-CSRF-TOKEN':'fixture'});
-  vi.mocked(fetch).mockResolvedValueOnce({ok:false,status:409} as Response);
+  vi.mocked(fetch).mockResolvedValueOnce({ok:false,status:409,json:async()=>({})} as Response);
   await expect(api.request('/movement',{mutation:true,body:{command:'FORWARD'}})).rejects.toThrow('caducado');
   vi.unstubAllGlobals();
 });
@@ -205,4 +205,37 @@ it('ordinary rerenders preserve a held session and do not STOP or acquire again'
   expect(calls.some(c=>c.body?.command==='STOP')).toBe(false);
   await act(async()=>{touchUp(button('↑ Adelante'));});
   expect(calls.some(c=>c.body?.command==='STOP')).toBe(true);
+});
+
+it('repeated idle servo read failures do not stop held propulsion; control failure still stops both',async()=>{
+  vi.useFakeTimers();
+  try {
+    const {api,calls}=fakeStation(); const original=vi.mocked(api.request).getMockImplementation()!;
+    vi.mocked(api.request).mockImplementation((url,options)=>{
+      if(url==='/sensor-servo'&&!options?.mutation) return Promise.reject(new Error('Lectura servo falló'));
+      if(url==='/sensor-servo'&&(options?.body as any)?.command==='INCREASE') return Promise.reject(new Error('Control servo falló'));
+      return original(url,options);
+    });
+    render(<MovementScreen client={api}/>); await act(async()=>{});
+    await act(async()=>{touchDown(button('↑ Adelante'));});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(3500);});
+    expect(screen.getByText('Lectura servo falló')).toBeTruthy();
+    expect(calls.some(c=>c.body?.command==='STOP')).toBe(false);
+    await act(async()=>{touchDown(button('↻ Girar +'),2);});
+    expect(calls.some(c=>c.body?.command==='STOP')).toBe(true);
+    expect(calls.some(c=>c.body?.command==='HOLD')).toBe(true);
+  } finally {vi.useRealTimers();}
+});
+
+it('403 invalidates CSRF but never replays a mutation; a fresh action bootstraps again',async()=>{
+  let bootstraps=0,mutations=0;
+  vi.stubGlobal('fetch',vi.fn(async(url)=>{
+    if(String(url).endsWith('/csrf')) {bootstraps++; return {ok:true,status:200,json:async()=>({headerName:'X-CSRF',token:`t${bootstraps}`})};}
+    mutations++; return {ok:mutations>1,status:mutations===1?403:200,json:async()=>({epoch:2})};
+  }));
+  const api=new SensorClient('http://127.0.0.1:18080');
+  await expect(api.request('/sensor-servo/session',{mutation:true})).rejects.toThrow('Sesión vencida');
+  expect(mutations).toBe(1); expect(bootstraps).toBe(1);
+  await api.request('/sensor-servo/session',{mutation:true});
+  expect(mutations).toBe(2); expect(bootstraps).toBe(2);
 });

@@ -2,7 +2,7 @@ export type Status = { angle: number; state: string; epoch: number; deviceTimeMs
 export type Command = 'INCREASE' | 'DECREASE' | 'CENTER';
 type Request = <T>(url: string, options?: {mutation?: boolean; body?: unknown; signal?: AbortSignal}) => Promise<T | null>;
 // Shared by browser and Expo. Only confirmed responses update the visible state.
-export function createServoControl(request: Request, onStatus: (status: Status) => void, onError: (error: string) => void) {
+export function createServoControl(request: Request, onStatus: (status: Status) => void, onError: (error: string, source: 'read' | 'control') => void) {
     let alive = true, generation = 0, epoch = 0, sequence = 0, busy = false;
     let desired: Command | null = null;
     const held = new Map<string, Command>();
@@ -11,7 +11,7 @@ export function createServoControl(request: Request, onStatus: (status: Status) 
     let polling: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const update = (value: Status | null) => { if (alive && value) { onStatus(value); } };
-    const fail = (e: unknown) => { if (alive) onError(e instanceof Error ? e.message : 'Estado sin confirmar'); };
+    const fail = (e: unknown, source: 'read' | 'control' = 'control') => { if (alive) onError(e instanceof Error ? e.message : 'Estado sin confirmar', source); };
     const hold = (id: number, seq: number) => {
       const current = generation;
       const pending = request<Status>('/sensor-servo', { mutation: true, body: { command: 'HOLD', epoch: id, sequence: seq } })
@@ -85,7 +85,7 @@ export function createServoControl(request: Request, onStatus: (status: Status) 
       try {
         const result = await request<Status>('/sensor-servo', { signal: abort.signal });
         if (current === generation && !abort.signal.aborted) update(result);
-      } catch (e) { if (current === generation && !abort.signal.aborted) fail(e); }
+      } catch (e) { if (current === generation && !abort.signal.aborted) fail(e, 'read'); }
       finally { if (polling === abort) polling = undefined; }
     };
     void poll(); const pollTimer = setInterval(() => void poll(), 1000);

@@ -2,6 +2,7 @@ import type { SensorData } from '../../../frontend/src/types/sensor';
 import { ControlRejected } from '../../../frontend/src/movement/controller';
 export type { SensorData };
 type Csrf = { headerName: string; token: string };
+export class ServerResponseError extends Error {}
 export class SensorClient {
   private csrf?: Promise<Csrf>;
   private readonly origin: string;
@@ -30,9 +31,26 @@ export class SensorClient {
       const response = await fetch(this.origin + path, {method:mutation ? 'POST' : 'GET', credentials:'include', headers,
         signal:abort.signal, body:body === undefined ? undefined : JSON.stringify(body)});
       if (!response.ok) {
-        if (response.status === 403) {this.csrf = undefined; throw new Error('Sesión vencida. Suelta los controles y vuelve a intentarlo.');}
-        if (response.status === 409) throw new ControlRejected('Control caducado o reemplazado.');
-        throw new Error(`Estado sin confirmar (HTTP ${response.status}).`);
+        if (response.status === 403) {this.csrf = undefined; throw new ServerResponseError('Sesión vencida. Suelta los controles y vuelve a intentarlo.');}
+        const problem = await response.json().catch(() => null) as {type?: string} | null;
+        const category = problem?.type?.replace('urn:plantclassifier:', '');
+        const messages: Record<string,string> = {
+          'stale-sample': 'La muestra ha caducado. Suelta el servo y captura otra vez.',
+          'capture-busy': 'Hay otra captura en curso. Vuelve a intentarlo al finalizar.',
+          'capture-deferred': 'Suelta el servo y vuelve a capturar. La lectura se aplazó para mantener el control seguro.',
+          'sensor-invalid': 'El sensor devolvió una lectura inválida. No se guardó una medición nueva.',
+          'sensor-data': 'Lectura fuera de rango o incompleta. No se guardó una medición nueva.',
+          'persistence': 'No se pudo guardar la medición en PostgreSQL.',
+          'broker-disconnected': 'Broker MQTT desconectado. Estado del dispositivo sin confirmar.',
+          'device-disconnected': 'ESP32 desconectada o reiniciada. Estado sin confirmar.',
+          'device-ack-timeout': 'Sin confirmación del ESP32. El watchdog sigue activo.',
+          'device-timeout': 'El dispositivo no respondió a tiempo.',
+          'device-communication': 'No se pudo obtener una respuesta válida del dispositivo.',
+          'mqtt-busy': 'Transporte MQTT saturado. Vuelve a intentarlo al finalizar.',
+        };
+        if (category && messages[category]) throw new ServerResponseError(messages[category]);
+        if (response.status === 409 && (path === '/movement' || path.startsWith('/movement/') || path.startsWith('/sensor-servo'))) throw new ControlRejected('Control caducado o reemplazado.');
+        throw new ServerResponseError(`Petición rechazada (HTTP ${response.status}).`);
       }
       return response.status === 204 ? null : await response.json() as T;
     } finally {clearTimeout(timer); signal?.removeEventListener('abort', cancel);}

@@ -9,7 +9,7 @@ export const Vibration = {vibrate: (_duration:number) => {}};
 export const dimensions = {width:844,height:390,scale:1,fontScale:1};
 export const useWindowDimensions = () => dimensions;
 export const StyleSheet = {create:<T,>(value:T)=>value};
-export const Text = ({children}:any) => <span>{children}</span>;
+export const Text = ({children,accessibilityRole}:any) => <span role={accessibilityRole}>{children}</span>;
 export const View = ({children,onTouchStart,onTouchEnd,onTouchCancel,onTouchMove,onAccessibilityAction,accessibilityLabel,accessibilityRole,accessibilityState,style}:any) => <div role={accessibilityRole} aria-label={accessibilityLabel} aria-disabled={accessibilityState?.disabled} data-style={JSON.stringify(style)}
  onTouchStart={e=>onTouchStart?.({nativeEvent:{identifier:e.changedTouches[0]?.identifier,changedTouches:Array.from(e.changedTouches)}})}
  onTouchEnd={e=>onTouchEnd?.({nativeEvent:{identifier:e.changedTouches[0]?.identifier,changedTouches:Array.from(e.changedTouches)}})}

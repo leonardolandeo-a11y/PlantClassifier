@@ -136,3 +136,57 @@ it('successful polls and duplicate focus preserve active session; reconnect neve
   await act(async()=>{down();});
   expect(mutations.filter(c=>c.url==='/movement/session')).toHaveLength(2);
 });
+
+it('explicit capture preempts a pending poll, deduplicates taps and ignores its late failure',async()=>{
+  vi.useFakeTimers(); vi.stubEnv('EXPO_PUBLIC_API_URL','http://station.local:18080');
+  let failPoll!:(error:Error)=>void;
+  vi.spyOn(SensorClient.prototype,'latest').mockResolvedValueOnce(reading as never)
+    .mockImplementationOnce(()=>new Promise((_,reject)=>{failPoll=reject;}));
+  let finish!:(data:any)=>void;
+  const capture=vi.spyOn(SensorClient.prototype,'capture').mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  render(<App/>); await act(async()=>{});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+  await act(async()=>{fireEvent.click(screen.getByText('＋ Capturar datos')); fireEvent.click(screen.getByText(/Capturar datos|Leyendo…/));});
+  expect(capture).toHaveBeenCalledTimes(1);
+  await act(async()=>{finish({...reading,temperature:28}); failPoll(new Error('obsolete poll'));});
+  expect(screen.getByText('28.0 °C')).toBeTruthy();
+  expect(screen.getByText('● Conectado · http://station.local:18080')).toBeTruthy();
+});
+
+it.each([[409,'stale-sample','La muestra ha caducado'],[503,'capture-busy','Hay otra captura'],[503,'persistence','PostgreSQL'],[403,'http-request','Sesión vencida']])('capture HTTP %s %s keeps connectivity and reports the specific error without retry',async(status,category,message)=>{
+  vi.stubEnv('EXPO_PUBLIC_API_URL','http://station.local:18080');
+  const fetcher=vi.fn(async(url)=>({ok:!String(url).endsWith('/capture'),status:String(url).endsWith('/capture')?status:200,json:async()=>String(url).endsWith('/csrf')?{headerName:'X-CSRF',token:'test'}:String(url).endsWith('/capture')?{type:`urn:plantclassifier:${category}`}:reading}));
+  vi.stubGlobal('fetch',fetcher);
+  render(<App/>); await screen.findByText('● Conectado · http://station.local:18080');
+  fireEvent.click(screen.getByText('＋ Capturar datos'));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('alert').textContent).toContain(message);
+  expect(screen.getByText('● Conectado · http://station.local:18080')).toBeTruthy();
+  expect(fetcher.mock.calls.filter(([url])=>String(url).endsWith('/capture'))).toHaveLength(1);
+});
+
+it('a late successful health read cannot replace the explicitly captured data',async()=>{
+  vi.useFakeTimers(); vi.stubEnv('EXPO_PUBLIC_API_URL','http://station.local:18080');
+  let finish!:(data:any)=>void;
+  vi.spyOn(SensorClient.prototype,'latest').mockResolvedValueOnce(reading as never).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  vi.spyOn(SensorClient.prototype,'capture').mockResolvedValue({...reading,temperature:29} as never);
+  render(<App/>); await act(async()=>{});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+  await act(async()=>{fireEvent.click(screen.getByText('＋ Capturar datos'));});
+  await act(async()=>{finish({...reading,temperature:12});});
+  expect(screen.getByText('29.0 °C')).toBeTruthy();
+});
+
+it('a capture network failure disconnects without retrying the mutation',async()=>{
+  vi.stubEnv('EXPO_PUBLIC_API_URL','http://station.local:18080');
+  const fetcher=vi.fn(async(url)=>{
+    if(String(url).endsWith('/capture')) throw new TypeError('Wi-Fi perdido');
+    return {ok:true,status:200,json:async()=>String(url).endsWith('/csrf')?{headerName:'X-CSRF',token:'test'}:reading};
+  });
+  vi.stubGlobal('fetch',fetcher);
+  render(<App/>); await screen.findByText('● Conectado · http://station.local:18080');
+  fireEvent.click(screen.getByText('＋ Capturar datos'));
+  await screen.findByText('○ Sin conexión');
+  expect(screen.getByRole('alert').textContent).toContain('Wi-Fi perdido');
+  expect(fetcher.mock.calls.filter(([url])=>String(url).endsWith('/capture'))).toHaveLength(1);
+});

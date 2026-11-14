@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start Docker and Expo on the detected LAN without keyboard input."""
+"""Start HTTP Docker and Expo on the detected private LAN; MQTT requires the documented manual flow."""
 import argparse
 import ipaddress
 import json
@@ -64,6 +64,18 @@ def validate_config(config, ip):
     return port
 
 
+def validate_transport(environment):
+    if environment.get('COMPOSE_FILE') or environment.get('DEVICE_TRANSPORT', 'http').lower() != 'http' or environment.get('MQTT_PASSWORD') or environment.get('MQTT_URL'):
+        raise ValueError('start-wifi.py solo soporta HTTP. Configuración MQTT/COMPOSE_FILE detectada; no se cambiará de transporte. Consulta docs/END_TO_END_REVIEW.md para el flujo MQTT local.')
+
+
+def validate_project(resources):
+    for labels in resources:
+        labels = labels or {}
+        if labels.get('com.plantclassifier.wifi-launcher') != 'http-v1':
+            raise ValueError('El proyecto Compose contiene recursos ajenos al lanzador HTTP. Usa un COMPOSE_PROJECT_NAME dedicado; no se modificarán los existentes.')
+
+
 def print_qr(ip):
     # Expo hides its terminal UI in CI mode. Reuse its installed QR renderer so
     # a closed stdin never prevents showing the code or causes a prompt.
@@ -93,14 +105,26 @@ def main():
         raise ValueError('NetworkManager no identifica la conexión. Selecciona otra interfaz.')
     print(f'Red: {identity} · interfaz {interface} · IPv4 {ip}/{prefix}', flush=True)
     env = dict(os.environ, APP_BIND_ADDRESS=ip)
-    env.setdefault('COMPOSE_PROJECT_NAME', 'plantclassifier-lab')
+    env['COMPOSE_PROJECT_NAME'] = env.get('COMPOSE_PROJECT_NAME') or 'plantclassifier-wifi'
+    validate_transport(env)
     # Explicit files prevent an ambient COMPOSE_FILE or automatic override exposing other services.
     with tempfile.TemporaryDirectory(prefix='plant-wifi-') as directory:
         override = Path(directory) / 'wifi.yaml'
-        override.write_text('services:\n  app:\n    restart: "no"\n')
+        override.write_text('services:\n  app:\n    restart: "no"\n    labels:\n      com.plantclassifier.wifi-launcher: http-v1\n  db:\n    labels:\n      com.plantclassifier.wifi-launcher: http-v1\nvolumes:\n  plantclassifier_postgres_data:\n    labels:\n      com.plantclassifier.wifi-launcher: http-v1\n')
         compose = ['docker', 'compose', '--env-file', str(ROOT / args.env_file), '--project-directory', str(ROOT), '-f', str(ROOT / 'docker-compose.yaml'), '-f', str(override)]
         config = json.loads(run(compose + ['config', '--format', 'json'], env=env, capture_output=True, text=True).stdout)
         port = validate_config(config, ip)
+        effective = run(compose + ['config', '--environment'], env=env, capture_output=True, text=True).stdout
+        validate_transport(dict(line.split('=', 1) for line in effective.splitlines() if '=' in line))
+        ids = run(['docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + env['COMPOSE_PROJECT_NAME']], env=env, capture_output=True, text=True).stdout.split()
+        if ids:
+            labels = run(['docker', 'inspect', '--format', '{{json .Config.Labels}}', *ids], env=env, capture_output=True, text=True).stdout
+            validate_project([json.loads(line) for line in labels.splitlines()])
+        volumes = run(['docker', 'volume', 'ls', '-q', '--filter', 'label=com.docker.compose.project=' + env['COMPOSE_PROJECT_NAME']], env=env, capture_output=True, text=True).stdout.split()
+        if volumes:
+            labels = run(['docker', 'volume', 'inspect', '--format', '{{json .Labels}}', *volumes], env=env, capture_output=True, text=True).stdout
+            validate_project([json.loads(line) for line in labels.splitlines()])
+        print(f'Modo HTTP · proyecto Compose: {env["COMPOSE_PROJECT_NAME"]} · volumen independiente del laboratorio', flush=True)
         url = f'http://{ip}:{port}'
         env.update(EXPO_PUBLIC_API_URL=url, REACT_NATIVE_PACKAGER_HOSTNAME=ip, EXPO_NO_DOTENV='1')
         expo = None

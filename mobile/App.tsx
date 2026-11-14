@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { SensorClient, type SensorData } from './src/api/client';
+import { SensorClient, ServerResponseError, type SensorData } from './src/api/client';
 import { connectStation } from './src/api/discovery';
 import { ActionButton } from './src/components/ActionButton';
 import { DataScreen } from './src/screens/DataScreen';
@@ -17,6 +17,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef<AbortController | null>(null);
+  const capturePending = useRef(false);
   const configured = useRef(process.env.EXPO_PUBLIC_API_URL);
   const mounted = useRef(false);
   const foreground = useRef(AppState.currentState === 'active');
@@ -63,7 +64,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, [client, origin, busy]);
   async function capture() {
-    if (!client || pending.current) return;
+    if (!client || capturePending.current) return;
+    cancel(); // Explicit capture supersedes a read-only health check.
+    capturePending.current = true;
     const abort = new AbortController(); pending.current = abort; setBusy(true); setError('');
     try {
       const next = await client.capture(abort.signal);
@@ -71,8 +74,8 @@ export default function App() {
       if (!next) throw new Error('La captura no devolvió datos.');
       setData(next);
     } catch (cause) {
-      if (mounted.current && !abort.signal.aborted) {setClient(null); setError(cause instanceof Error ? cause.message : 'Captura sin confirmar.');}
-    } finally {if (pending.current === abort) {pending.current = null; if (mounted.current) setBusy(false);}}
+      if (mounted.current && !abort.signal.aborted) {if (!(cause instanceof ServerResponseError)) setClient(null); setError(cause instanceof Error ? cause.message : 'Captura sin confirmar.');}
+    } finally {capturePending.current = false; if (pending.current === abort) {pending.current = null; if (mounted.current) setBusy(false);}}
   }
   return <SafeAreaProvider><SafeAreaView style={styles.screen}><StatusBar hidden />
     <View style={styles.header}><View style={{flex:1}}><Text style={styles.eyebrow}>PLANTCLASSIFIER / FIELD LAB</Text><Text accessibilityLiveRegion="polite" style={styles.body}>{busy ? '● Conectando / leyendo…' : client ? `● Conectado · ${origin}` : '○ Sin conexión'}</Text></View>
@@ -85,7 +88,7 @@ export default function App() {
         <ActionButton title="Reintentar" disabled={busy} onPress={() => void connect()} />
       </View>}
       {tab === 'Datos' ? <>
-        <DataScreen {...{data, busy, error}} connected={!!client} capture={() => void capture()} />
+        <DataScreen {...{data, busy}} error={client ? error : ''} connected={!!client} capture={() => void capture()} />
       </> : <MovementScreen client={client} scrollEpoch={scrollEpoch} />}
     </ScrollView></SafeAreaView></SafeAreaProvider>;
 }

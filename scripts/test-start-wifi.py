@@ -29,15 +29,18 @@ class WifiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             wifi.validate_config(config, '10.1.2.4')
 
-    def test_short_command_is_noninteractive_and_reuses_lab(self):
-        self.check_start([], {}, '.env.lab', 'plantclassifier-lab')
+    def test_short_command_is_noninteractive_and_uses_dedicated_project(self):
+        self.check_start([], {}, '.env.lab', 'plantclassifier-wifi')
 
     def test_explicit_project_and_env_file_are_respected(self):
         self.check_start(['--env-file', '.env.personal'],
                          {'COMPOSE_PROJECT_NAME': 'my-project'}, '.env.personal', 'my-project')
 
+    def test_empty_project_uses_dedicated_default(self):
+        self.check_start([], {'COMPOSE_PROJECT_NAME': ''}, '.env.lab', 'plantclassifier-wifi')
+
     def test_ctrl_c_stops_expo_and_only_backend(self):
-        self.check_start([], {}, '.env.lab', 'plantclassifier-lab', interrupt=True)
+        self.check_start([], {}, '.env.lab', 'plantclassifier-wifi', interrupt=True)
 
     def check_start(self, arguments, environment, env_file, project, interrupt=False):
         import json
@@ -49,7 +52,7 @@ class WifiTests(unittest.TestCase):
         process.returncode = 0
         opener = MagicMock()
         opener.open.return_value.__enter__.return_value.status = 204
-        with patch.object(wifi.sys, 'argv', ['start-wifi.py'] + arguments), patch.dict(wifi.os.environ, environment, clear=True), patch.object(wifi.shutil, 'which', return_value='/usr/bin/tool'), patch.object(wifi.Path, 'exists', return_value=True), patch.object(wifi, 'networks', return_value=[('wlp2s0', '192.168.2.8', 24)]), patch.object(wifi, 'connection_name', return_value='Lab'), patch.object(wifi.sys.stdin, 'isatty', return_value=False), patch('builtins.input', side_effect=AssertionError('Unexpected prompt')), patch('builtins.print'), patch.object(wifi, 'run', return_value=SimpleNamespace(stdout=json.dumps(config))) as run, patch.object(wifi.subprocess, 'Popen', return_value=process) as popen, patch.object(wifi.urllib.request, 'build_opener', return_value=opener), patch.object(wifi, 'print_qr') as qr, patch.object(wifi.time, 'sleep', side_effect=KeyboardInterrupt), patch.object(wifi.os, 'killpg') as killpg:
+        with patch.object(wifi.sys, 'argv', ['start-wifi.py'] + arguments), patch.dict(wifi.os.environ, environment, clear=True), patch.object(wifi.shutil, 'which', return_value='/usr/bin/tool'), patch.object(wifi.Path, 'exists', return_value=True), patch.object(wifi, 'networks', return_value=[('wlp2s0', '192.168.2.8', 24)]), patch.object(wifi, 'connection_name', return_value='Lab'), patch.object(wifi.sys.stdin, 'isatty', return_value=False), patch('builtins.input', side_effect=AssertionError('Unexpected prompt')), patch('builtins.print'), patch.object(wifi, 'run', side_effect=lambda command, **kw: SimpleNamespace(stdout=json.dumps(config) if command[-2:]==['--format','json'] else '')) as run, patch.object(wifi.subprocess, 'Popen', return_value=process) as popen, patch.object(wifi.urllib.request, 'build_opener', return_value=opener), patch.object(wifi, 'print_qr') as qr, patch.object(wifi.time, 'sleep', side_effect=KeyboardInterrupt), patch.object(wifi.os, 'killpg') as killpg:
             if interrupt:
                 process.poll.return_value = None
                 with self.assertRaises(KeyboardInterrupt):
@@ -61,7 +64,8 @@ class WifiTests(unittest.TestCase):
             qr.assert_called_once_with('192.168.2.8')
         for call in run.call_args_list:
             self.assertEqual(call.kwargs['env']['COMPOSE_PROJECT_NAME'], project)
-            self.assertIn(str(wifi.ROOT / env_file), call.args[0])
+            if call.args[0][1] == 'compose':
+                self.assertIn(str(wifi.ROOT / env_file), call.args[0])
             self.assertNotIn('down', call.args[0])
             self.assertNotIn('-v', call.args[0])
         self.assertEqual(run.call_args_list[-1].args[0][-2:], ['stop', 'app'])
@@ -69,8 +73,39 @@ class WifiTests(unittest.TestCase):
         self.assertEqual(popen.call_args.kwargs['env']['EXPO_NO_DOTENV'], '1')
         self.assertEqual(popen.call_args.kwargs['env']['CI'], '1')
         self.assertEqual(popen.call_args.kwargs['stdin'], wifi.subprocess.DEVNULL)
-        self.assertEqual(run.call_args_list[1].args[0][-7:],
+        self.assertEqual(next(call.args[0] for call in run.call_args_list if 'up' in call.args[0])[-7:],
                          ['up', '-d', '--build', '--wait', '--wait-timeout', '180', 'app'])
+
+    def test_mqtt_cannot_silently_fall_back_to_http(self):
+        wifi.validate_transport({})
+        wifi.validate_transport({'DEVICE_TRANSPORT': 'http'})
+        for env in ({'DEVICE_TRANSPORT': 'mqtt'}, {'MQTT_PASSWORD': 'fixture'}, {'MQTT_URL': 'tcp://broker'}, {'COMPOSE_FILE': 'docker-compose.mqtt.yaml'}):
+            with self.assertRaisesRegex(ValueError, 'solo soporta HTTP'):
+                wifi.validate_transport(env)
+
+    def test_existing_unowned_project_is_never_reused(self):
+        wifi.validate_project([])
+        wifi.validate_project([{'com.plantclassifier.wifi-launcher': 'http-v1'}])
+        for container in ({}, {'com.docker.compose.project': 'plantclassifier-lab'}, None):
+            with self.assertRaisesRegex(ValueError, 'ajenos'):
+                wifi.validate_project([container])
+
+    def test_preflight_rejects_env_file_mqtt_and_foreign_project_before_up(self):
+        import json
+        from types import SimpleNamespace
+        config = {'services': {'app': {'ports': [{'host_ip': '192.168.2.8', 'target': 8080, 'published': '18081'}]}}}
+        for mode in ('mqtt-env-file', 'foreign-project', 'foreign-volume'):
+            def result(command, **kwargs):
+                if command[-2:] == ['--format', 'json']: return SimpleNamespace(stdout=json.dumps(config))
+                if command[-1] == '--environment': return SimpleNamespace(stdout='DEVICE_TRANSPORT=mqtt' if mode == 'mqtt-env-file' else '')
+                if command[:2] == ['docker', 'ps']: return SimpleNamespace(stdout='fixture-container' if mode == 'foreign-project' else '')
+                if command[:2] == ['docker', 'inspect']: return SimpleNamespace(stdout='{}')
+                if command[:3] == ['docker', 'volume', 'ls']: return SimpleNamespace(stdout='fixture-volume')
+                if command[:3] == ['docker', 'volume', 'inspect']: return SimpleNamespace(stdout='{}')
+                raise AssertionError('Mutation attempted before validation')
+            with self.subTest(mode=mode), patch.object(wifi.sys, 'argv', ['start-wifi.py']), patch.dict(wifi.os.environ, {}, clear=True), patch.object(wifi.shutil, 'which', return_value='/usr/bin/tool'), patch.object(wifi.Path, 'exists', return_value=True), patch.object(wifi, 'networks', return_value=[('wlp2s0', '192.168.2.8', 24)]), patch.object(wifi, 'connection_name', return_value='Lab'), patch('builtins.print'), patch.object(wifi, 'run', side_effect=result) as run:
+                with self.assertRaises(ValueError): wifi.main()
+                self.assertFalse(any('up' in call.args[0] or 'stop' in call.args[0] for call in run.call_args_list))
 
     def test_network_filter_rejects_public_loopback_and_virtual(self):
         import json

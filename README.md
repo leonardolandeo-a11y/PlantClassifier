@@ -45,8 +45,10 @@ python3 scripts/start-wifi.py
 ```
 
 Arranca Docker y Expo y muestra el QR sin pedir entrada por teclado. Usa el proyecto
-`plantclassifier-lab` y `.env.lab` por defecto para reutilizar su PostgreSQL y volumen
-existentes, sin modificar datos ni credenciales. Si usas otro proyecto o archivo:
+`plantclassifier-wifi` y `.env.lab` por defecto, con un volumen independiente.
+Solo admite HTTP y rechaza proyectos existentes que no pertenezcan al lanzador.
+No reutiliza el PostgreSQL de laboratorio. Elige puertos libres si el laboratorio
+ya está activo. Para MQTT sigue el [flujo local explícito](docs/END_TO_END_REVIEW.md#flujo-local-por-wi-fi). Si usas otro proyecto o archivo:
 
 ```bash
 COMPOSE_PROJECT_NAME=mi-proyecto python3 scripts/start-wifi.py --env-file .env.personal
