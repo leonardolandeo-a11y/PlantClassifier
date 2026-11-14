@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Start HTTP Docker and Expo on the detected private LAN; MQTT requires the documented manual flow."""
+"""Start Expo on the detected private LAN: --simulate is isolated; default keeps hardware HTTP."""
 import argparse
+import fcntl
 import ipaddress
 import json
 import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,7 +79,7 @@ def validate_project(resources):
             raise ValueError('El proyecto Compose contiene recursos ajenos al lanzador HTTP. Usa un COMPOSE_PROJECT_NAME dedicado; no se modificarán los existentes.')
 
 
-def print_qr(ip):
+def print_qr(ip, port=8081):
     # Expo hides its terminal UI in CI mode. Reuse its installed QR renderer so
     # a closed stdin never prevents showing the code or causes a prompt.
     run(['node', '-e', """
@@ -86,14 +89,112 @@ const cli = require.resolve('@expo/cli/package.json', { paths: [path.dirname(exp
 const { printQRCode } = require(path.join(path.dirname(cli), 'build/src/utils/qr.js'));
 printQRCode(process.argv[1]).print();
 console.log('Expo Go: ' + process.argv[1]);
-""", f'exp://{ip}:8081'], cwd=ROOT / 'mobile', stdin=subprocess.DEVNULL)
+""", f'exp://{ip}:{port}'], cwd=ROOT / 'mobile', stdin=subprocess.DEVNULL)
+
+
+def free_metro_port(ip):
+    # Never terminate an unrelated Metro process.
+    with socket.socket() as listener:
+        listener.bind((ip, 0))
+        return listener.getsockname()[1]
+
+
+def simulate(interface, no_build=False):
+    for tool in ('ip', 'docker', 'npm', 'node'):
+        if not shutil.which(tool):
+            raise ValueError(f'Falta {tool}; consulta las dependencias Expo Go en README.md.')
+    if not (ROOT / 'mobile/node_modules/expo').exists():
+        raise ValueError('Instala dependencias móviles: npm ci --prefix mobile')
+    selected = select_network(networks(), interface)
+    name, ip, prefix = selected
+    print(f'Demo HTTP explícita con dos simuladores; no se carga .env.lab ni MQTT. LAN: {name} {ip}/{prefix}', flush=True)
+    # Remove Compose/Expo ambient settings; no private dotenv is read by either tool.
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'EXPO_', 'REACT_NATIVE_'))}
+    env.update(EXPO_NO_DOTENV='1', REACT_NATIVE_PACKAGER_HOSTNAME=ip, CI='1')
+    with tempfile.TemporaryDirectory(prefix='plant-demo-wifi-') as directory:
+        override = Path(directory) / 'lan.yaml'
+        override.write_text('services:\n  web:\n    ports: !override\n      - target: 8080\n        host_ip: ' + ip + '\n        published: "0"\n')
+        # Each invocation owns its containers; only the demo data volume is shared.
+        project = 'plantclassifier-demo-wifi-' + uuid.uuid4().hex[:10]
+        with override.open('a') as config:
+            config.write('volumes:\n  demo_data:\n    name: plantclassifier-demo-wifi_demo_data\n')
+        images = Path(directory) / 'images.json'
+        images.write_text(json.dumps({'services': {name: {'image': f'plantclassifier-demo-wifi-{name}:latest'}
+            for name in ('app', 'simulator', 'sensor-simulator')}}))
+        compose = ['docker', 'compose', '--env-file', os.devnull, '-p', project,
+                   '-f', str(ROOT / 'docker-compose.demo.yaml'), '-f', str(override), '-f', str(images)]
+        expo = None
+        started = False
+        # Do not open the persistent demo database from two sessions.
+        active = run(['docker', 'ps', '-q', '--filter',
+                      'volume=plantclassifier-demo-wifi_demo_data'],
+                     env=env, capture_output=True, text=True).stdout.strip()
+        if active:
+            raise ValueError('El volumen de demo ya está en uso; cierra su sesión antes de iniciar otra.')
+        try:
+            started = True
+            run(compose + ['up', '-d', '--no-build' if no_build else '--build', '--wait'], env=env, cwd=ROOT)
+            published = run(compose + ['port', 'web', '8080'], env=env, capture_output=True, text=True).stdout.strip()
+            if published.rsplit(':', 1)[0] != ip:
+                raise ValueError('Docker publicó una interfaz inesperada.')
+            url = 'http://' + published
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(url + '/csrf', timeout=8) as response:
+                if not json.load(response).get('token'):
+                    raise ValueError('Backend sin sesión CSRF válida.')
+            env['EXPO_PUBLIC_API_URL'] = url
+            port = free_metro_port(ip)
+            print(f'Backend verificado: {url}; Metro usará el puerto libre {port}.', flush=True)
+            expo = subprocess.Popen(['npm', 'start', '--prefix', 'mobile', '--', '--lan', '--go', '--clear', '--port', str(port)],
+                                    cwd=ROOT, env=env, stdin=subprocess.DEVNULL, start_new_session=True)
+            deadline = time.monotonic() + 90
+            while True:
+                if expo.poll() is not None:
+                    raise ValueError('Metro terminó antes de estar listo. Revisa el error anterior y vuelve a ejecutar; no se detuvieron procesos ajenos.')
+                if selected not in networks():
+                    raise ValueError('Cambió la IP LAN; ejecuta de nuevo el comando.')
+                try:
+                    with opener.open(f'http://{ip}:{port}/status', timeout=2) as response:
+                        if response.read() == b'packager-status:running':
+                            break
+                except (OSError, urllib.error.URLError):
+                    pass
+                if time.monotonic() >= deadline:
+                    raise ValueError('Metro no está listo tras 90 s; revisa firewall/puerto y vuelve a ejecutar.')
+                time.sleep(1)
+            print_qr(ip, port)
+            print('Teléfono en la misma Wi-Fi privada. Ctrl+C detiene esta demo LAN y conserva sus datos.', flush=True)
+            while expo.poll() is None:
+                time.sleep(3)
+                if selected not in networks():
+                    raise ValueError('Cambió la IP LAN; ejecuta de nuevo el comando.')
+            return expo.returncode
+        finally:
+            if expo is not None and expo.poll() is None:
+                os.killpg(expo.pid, signal.SIGTERM)
+                try:
+                    expo.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(expo.pid, signal.SIGKILL)
+                    expo.wait()
+            if started:
+                run(compose + ['down'], env=env, cwd=ROOT)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--env-file', default='.env.lab', help='Archivo privado Compose existente, relativo a la raíz (por defecto .env.lab)')
+    parser.add_argument('--env-file', default='.env.lab', help='Solo hardware: archivo privado Compose relativo a la raíz (por defecto .env.lab)')
     parser.add_argument('--interface', help='Interfaz física, por ejemplo wlp2s0; nunca una IP fija')
+    parser.add_argument('--simulate', action='store_true', help='Demo aislada sin hardware ni archivos privados')
+    parser.add_argument('--no-build', action='store_true', help='Reutiliza imágenes demo ya construidas (solo --simulate)')
     args = parser.parse_args()
+    if args.simulate:
+        with open(Path(tempfile.gettempdir()) / f'plant-demo-wifi-{os.getuid()}.lock', 'a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ValueError('Ya hay una sesión de demo Wi-Fi activa.') from None
+            return simulate(args.interface, args.no_build)
     for tool in ('ip', 'docker', 'npm', 'node'):
         if not shutil.which(tool):
             raise ValueError(f'Falta {tool}.')
@@ -169,7 +270,8 @@ def main():
 
 
 if __name__ == '__main__':
-    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    for stop_signal in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(stop_signal, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         sys.exit(main())
     except KeyboardInterrupt:

@@ -1,3 +1,13 @@
+## Expo Go sin hardware
+
+Desde la raíz del repositorio: `npm ci --prefix mobile` y
+`python3 scripts/start-wifi.py --simulate`. Requiere Linux/iproute2, Python 3,
+Node.js 24/npm, Docker Compose 2.24.4+ y Expo Go en la misma Wi-Fi privada.
+El lanzador detecta IP y puertos, verifica Spring y Metro antes del QR e inyecta
+la URL real sin archivos privados. Ctrl+C conserva el volumen de demo.
+No se ha probado esta entrega en un teléfono físico. Consulta el README principal
+para la demo web, que solo necesita Docker y navegador.
+
 # PlantClassifier móvil — Expo
 
 App Expo/React Native con Datos y Movimiento, orientación **landscape**, áreas seguras y columnas flexibles. Los paneles se reorganizan en pantallas estrechas; el desplazamiento es vertical. Comparte tipos, formatos y controladores de seguridad con `frontend/src`.

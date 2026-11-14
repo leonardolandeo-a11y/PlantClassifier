@@ -1,0 +1,89 @@
+# Standalone software demo. No interpolation or private env files are used.
+name: plantclassifier-standalone-demo
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: demo
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo-local-only
+    volumes:
+      - demo_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U demo -d demo']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  sensor-simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simulator
+    command: [--host, 0.0.0.0, --port, '8081', --role, sensor]
+    environment:
+      DEVICE_TOKEN: demo-software-only-token-0000000000000000
+    healthcheck: &device-health
+      test: [CMD, python, -c, "import os,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/status',headers={'X-Device-Token':os.environ['DEVICE_TOKEN']}),timeout=2).read()"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simulator
+    command: [--host, 0.0.0.0, --port, '8081', --role, movement]
+    environment:
+      DEVICE_TOKEN: demo-software-only-token-0000000000000000
+    healthcheck: *device-health
+  app:
+    build: .
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/demo
+      SPRING_DATASOURCE_USERNAME: demo
+      SPRING_DATASOURCE_PASSWORD: demo-local-only
+      DEVICE_TOKEN: demo-software-only-token-0000000000000000
+      DEVICE_TRANSPORT: http
+      ESP32_URL: http://sensor-simulator:8081
+      MOVEMENT_ESP32_URL: http://simulator:8081
+      ML_PYTHON_PATH: /opt/venv/bin/python3
+      ML_SCRIPT_PATH: predict.py
+      ML_WORKING_DIRECTORY: /app/MLClassification
+      ML_PERSISTENT: 'true'
+      SESSION_COOKIE_SECURE: 'false'
+    depends_on:
+      db:
+        condition: service_healthy
+      sensor-simulator:
+        condition: service_healthy
+      simulator:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/csrf',timeout=3).read()"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+  web:
+    image: nginx:1.28-alpine
+    volumes:
+      - ./docker/demo-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [default, ingress]
+    ports:
+      - target: 8080
+        host_ip: 127.0.0.1
+        published: '0'
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/csrf']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+networks:
+  ingress:
+  default:
+    internal: true
+volumes:
+  demo_data:

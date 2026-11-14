@@ -9,6 +9,58 @@ spec.loader.exec_module(wifi)
 
 
 class WifiTests(unittest.TestCase):
+    def test_simulation_uses_real_url_and_ready_metro_without_private_env(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        process = MagicMock()
+        process.poll.side_effect = [None, 0, 0]
+        process.returncode = 0
+        backend = MagicMock()
+        backend.read.return_value = b'{"token":"csrf"}'
+        metro = MagicMock()
+        metro.read.return_value = b'packager-status:running'
+        opener = MagicMock()
+        opener.open.return_value.__enter__.side_effect = [backend, metro]
+        def result(command, **kwargs):
+            return SimpleNamespace(stdout='192.168.2.8:49152' if command[-3:] == ['port','web','8080'] else '')
+        with patch.dict(wifi.os.environ, {'COMPOSE_FILE':'private.yaml', 'EXPO_PUBLIC_API_URL':'http://wrong', 'DEVICE_TRANSPORT':'mqtt'}, clear=True), patch.object(wifi.shutil,'which',return_value='/bin/tool'), patch.object(wifi.Path,'exists',return_value=True), patch.object(wifi,'networks',return_value=[('wlp2s0','192.168.2.8',24)]), patch.object(wifi,'connection_name',side_effect=AssertionError('No NetworkManager in simulation')), patch.object(wifi,'run',side_effect=result) as run, patch.object(wifi,'free_metro_port',return_value=49153), patch.object(wifi.subprocess,'Popen',return_value=process) as popen, patch.object(wifi.urllib.request,'build_opener',return_value=opener), patch.object(wifi,'print_qr') as qr:
+            self.assertEqual(wifi.simulate(None),0)
+        qr.assert_called_once_with('192.168.2.8',49153)
+        self.assertEqual(popen.call_args.kwargs['env']['EXPO_PUBLIC_API_URL'],'http://192.168.2.8:49152')
+        self.assertNotIn('COMPOSE_FILE',popen.call_args.kwargs['env'])
+        self.assertEqual(popen.call_args.args[0][-1],'49153')
+        for call in run.call_args_list:
+            command=call.args[0]
+            if command[1] == 'compose':
+                self.assertIn(wifi.os.devnull,command)
+            self.assertNotIn('.env.lab',' '.join(command))
+            self.assertNotIn('-v',command)
+        self.assertEqual(run.call_args_list[-1].args[0][-1],'down')
+
+    def test_simulation_refuses_volume_in_use_before_starting(self):
+        from types import SimpleNamespace
+        with patch.object(wifi.shutil, 'which', return_value='/bin/tool'), patch.object(wifi.Path, 'exists', return_value=True), patch.object(wifi, 'networks', return_value=[('wlp2s0', '192.168.2.8', 24)]), patch.object(wifi, 'run', return_value=SimpleNamespace(stdout='existing-db')) as run:
+            with self.assertRaisesRegex(ValueError, 'volumen de demo ya está en uso'):
+                wifi.simulate(None, no_build=True)
+        self.assertEqual(len(run.call_args_list), 1)
+        self.assertEqual(run.call_args.args[0][:3], ['docker', 'ps', '-q'])
+
+    def test_simulation_refuses_concurrent_launcher(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, patch.object(wifi.tempfile, 'gettempdir', return_value=directory), patch.object(wifi.sys, 'argv', ['start-wifi.py', '--simulate']), patch.object(wifi, 'simulate') as simulate:
+            with open(wifi.Path(directory) / f'plant-demo-wifi-{wifi.os.getuid()}.lock', 'a') as lock:
+                wifi.fcntl.flock(lock, wifi.fcntl.LOCK_EX | wifi.fcntl.LOCK_NB)
+                with self.assertRaisesRegex(ValueError, 'sesión de demo Wi-Fi activa'):
+                    wifi.main()
+            simulate.assert_not_called()
+
+    def test_free_metro_port_avoids_existing_listener(self):
+        import socket
+        with socket.socket() as occupied:
+            occupied.bind(('127.0.0.1',0))
+            occupied.listen()
+            self.assertNotEqual(wifi.free_metro_port('127.0.0.1'),occupied.getsockname()[1])
+
     def test_selection_requires_unambiguous_interface(self):
         one = ('wlp2s0', '192.168.2.8', 24)
         two = ('enp3s0', '10.1.2.3', 24)

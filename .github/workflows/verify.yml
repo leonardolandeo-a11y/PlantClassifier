@@ -73,3 +73,31 @@ jobs:
           name: browser-validation
           path: /tmp/plant-browser-reports
           if-no-files-found: ignore
+
+  demo:
+    runs-on: ubuntu-latest
+    env:
+      DEMO_REPORT: ${{ runner.temp }}/plant-demo-report
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Standalone demo from clean checkout, occupied ports and real browser
+        run: |
+          mkdir -p "$DEMO_REPORT"
+          set -o pipefail
+          python scripts/test-demo.py 2>&1 | tee "$DEMO_REPORT/execution.log"
+      - name: Preserve demo evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-demo
+          path: ${{ env.DEMO_REPORT }}
+          if-no-files-found: error

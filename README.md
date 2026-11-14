@@ -1,5 +1,75 @@
 # PlantClassifier
 
+## Arrancar la demo web
+
+Demo web autónoma: solo Docker con Compose **2.24.4 o posterior** y navegador
+(Git para clonar). La primera descarga/construcción puede tardar más de dos minutos.
+No necesitas Node, Java, Python, ESP32, MQTT ni archivos `.env` en el host.
+
+```bash
+git clone https://github.com/leonardolandeo-a11y/PlantClassifier.git
+cd PlantClassifier
+docker compose --env-file /dev/null -p plantclassifier-standalone-demo -f docker-compose.demo.yaml up -d --build --wait
+# URL real: Docker asigna un puerto libre, incluso si 18080 está ocupado.
+echo "http://$(docker compose --env-file /dev/null -p plantclassifier-standalone-demo -f docker-compose.demo.yaml port web 8080)"
+# Logs (Ctrl+C solo deja de seguirlos)
+docker compose --env-file /dev/null -p plantclassifier-standalone-demo -f docker-compose.demo.yaml logs -f
+# Detener sin borrar datos
+docker compose --env-file /dev/null -p plantclassifier-standalone-demo -f docker-compose.demo.yaml down
+# Volver a iniciar conservando PostgreSQL
+docker compose --env-file /dev/null -p plantclassifier-standalone-demo -f docker-compose.demo.yaml up -d --build --wait
+```
+
+Abre la URL impresa, pulsa **Capturar datos** y visita **Movimiento** para probar
+W/A/S/D, STOP y el servo. Las lecturas son simuladas; la predicción la ejecuta Python
+con el modelo incluido. El volumen `plantclassifier-standalone-demo_demo_data` conserva
+los datos; no uses `down -v` si quieres mantenerlos. Consulta otra vez la URL después
+de recrear contenedores: puede cambiar.
+
+Este Compose es independiente del laboratorio: publica únicamente la web en
+`127.0.0.1`. Spring, PostgreSQL y los simuladores permanecen en una red interna sin
+salida hacia placas o brokers; ninguno publica puertos. Solo el proxy web conecta
+esa red con el puerto del navegador. Usa valores públicos exclusivos de demo, nunca
+credenciales privadas;
+no interpola `.env`, `.env.lab` ni variables de transporte. No lo combines con los
+Compose de hardware. Los comandos fijan el proyecto y omiten los archivos de entorno
+para que incluso un `COMPOSE_PROJECT_NAME` local del laboratorio no seleccione sus
+contenedores.
+
+## Expo Go con simuladores
+
+Dependencias **solo para móvil**: Linux con `ip` (iproute2), Python 3, Node.js 24/npm,
+Docker Compose 2.24.4+, Expo Go compatible con el SDK de `mobile/package.json` y un
+teléfono en la misma Wi-Fi privada. No se necesita NetworkManager en modo simulado.
+
+```bash
+npm ci --prefix mobile
+python3 scripts/start-wifi.py --simulate
+# Si hay varias interfaces físicas privadas:
+python3 scripts/start-wifi.py --simulate --interface wlp2s0
+```
+
+Detecta la IP privada, inicia un proyecto `plantclassifier-demo-wifi-<sesión>` y
+reutiliza el volumen `plantclassifier-demo-wifi_demo_data`. Rechaza otra sesión activa
+para no abrir ese volumen simultáneamente. Obtiene
+el puerto asignado por Docker, verifica `/csrf` e inyecta `EXPO_PUBLIC_API_URL` antes
+de iniciar Metro. Elige un puerto libre para Metro y solo muestra el QR tras comprobar
+su disponibilidad. No pide `CONFIAR`, no lee `.env.lab` y anuncia explícitamente que
+usa HTTP simulado. Ctrl+C cierra Metro, elimina los contenedores y redes de esa
+sesión y conserva los datos. Para reutilizar imágenes locales ya construidas, añade
+`--no-build`. Si otro proceso
+ocupa el puerto entre la selección y el arranque, muestra el error: vuelve a ejecutar;
+no mata procesos ajenos. Si el teléfono no conecta, abre la URL del backend desde él
+y revisa aislamiento Wi-Fi/firewall. La web de escritorio sigue siendo solo loopback.
+**Expo Go no se ha probado en un teléfono físico en esta entrega.**
+
+## Hardware y laboratorio (flujo independiente)
+
+El comando sin `--simulate` conserva el flujo HTTP existente con `.env.lab` y
+NetworkManager. Rechaza MQTT en vez de cambiar el transporte silenciosamente.
+Para MQTT usa el procedimiento de hardware descrito abajo. Los archivos y volúmenes
+del laboratorio no forman parte de la demo.
+
 PlantClassifier permite conducir un robot con W/A/S/D y consultar qué cultivo sugiere
 un modelo a partir de temperatura, humedad del aire, humedad del suelo y pH. La página se comunica con Spring Boot;
 el servidor guarda las mediciones en PostgreSQL y ejecuta Python para predecir.
@@ -25,7 +95,7 @@ flowchart TD
     MOTOR --> SERIAL[Serial Monitor / actuadores opcionales]
 ```
 
-## Iniciar la aplicación
+## Iniciar la aplicación con hardware
 
 Necesitas Docker con Compose. Desde la raíz, copia `.env.example` a `.env` **solo si
 no existe**, configura credenciales privadas y las dos direcciones ESP32. No uses los
@@ -66,7 +136,10 @@ Si ya tienes datos, conserva el mismo nombre de proyecto Compose y volumen. Para
 base anterior a Flyway, sigue [MIGRATIONS](docs/MIGRATIONS.md) antes de arrancar.
 Nunca necesitas borrar volúmenes para ejecutar esta guía.
 
-## Simulación sin placas
+## Simulación del laboratorio (overlay anterior)
+
+Para un clon nuevo usa la demo autónoma del inicio: no requiere esta configuración.
+Este overlay conserva la configuración y los puertos del laboratorio.
 
 Con el mismo `.env`, este único overlay sustituye las dos placas por dos servidores
 Python separados. Mantiene Spring, PostgreSQL y el modelo real:
@@ -161,6 +234,10 @@ Docker compila Vite en una etapa Node; producción ejecuta únicamente Spring y 
 No se versionan los assets generados. Detalles y validación: [migración React](docs/REACT_MIGRATION.md).
 
 ## Validación y cambios locales
+
+La demo tiene su propia [validación reproducible](docs/DEMO_VALIDATION.md), configurada
+en CI con puertos ocupados, navegador real y persistencia tras recrear contenedores.
+Los cambios de esta entrega siguen locales: el workflow remoto aún no está validado.
 
 Consulta [validación integral](docs/FINAL_VALIDATION.md) para pruebas ejecutadas,
 limitaciones y puesta en marcha. No se realizaron commits, push ni cargas a placas.
