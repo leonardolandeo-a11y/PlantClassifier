@@ -38,7 +38,28 @@ test -f .env || cp .env.example .env
 docker compose up -d --build --wait
 ```
 
-Abre `http://127.0.0.1:18080`: el dashboard permite usar **Datos** para capturar y **Movimiento** para W/A/S/D, sin login. Compose publica en `127.0.0.1` por defecto. Para Android/LAN configura explícitamente `APP_BIND_ADDRESS=0.0.0.0`.
+Abre `http://127.0.0.1:18080`: el dashboard permite usar **Datos** para capturar y **Movimiento** para W/A/S/D, sin login. Compose publica en `127.0.0.1` por defecto. Para Expo Go por Wi-Fi, con las dependencias móviles instaladas y tu `.env.lab` existente, ejecuta desde la raíz:
+
+```bash
+python3 scripts/start-wifi.py
+```
+
+Arranca Docker y Expo y muestra el QR sin pedir entrada por teclado. Usa el proyecto
+`plantclassifier-lab` y `.env.lab` por defecto para reutilizar su PostgreSQL y volumen
+existentes, sin modificar datos ni credenciales. Si usas otro proyecto o archivo:
+
+```bash
+COMPOSE_PROJECT_NAME=mi-proyecto python3 scripts/start-wifi.py --env-file .env.personal
+```
+
+Detecta la interfaz física y su IPv4 privada e inyecta `EXPO_PUBLIC_API_URL` en Expo,
+sin guardar IPs. Si hay varias interfaces candidatas, especifica `--interface NOMBRE`.
+El teléfono debe estar en la misma red privada. PostgreSQL permanece en loopback;
+el backend se publica solo en la IP seleccionada. Ctrl+C detiene Expo y el backend
+LAN, conservando PostgreSQL y sus datos; un cambio de red también cierra la sesión.
+Expo usa el puerto 8081: si está ocupado, falla sin preguntar por otro puerto.
+Se ejecuta en modo no interactivo (`CI=1`), sin recarga automática al editar código.
+Sin USB/ADB; consulta [la guía móvil](mobile/README.md).
 Si ya tienes datos, conserva el mismo nombre de proyecto Compose y volumen. Para una
 base anterior a Flyway, sigue [MIGRATIONS](docs/MIGRATIONS.md) antes de arrancar.
 Nunca necesitas borrar volúmenes para ejecutar esta guía.

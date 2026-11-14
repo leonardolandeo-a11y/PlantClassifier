@@ -1,41 +1,91 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { AppState, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { SensorClient, type SensorData } from './src/api/client';
+import { connectStation } from './src/api/discovery';
 import { ActionButton } from './src/components/ActionButton';
 import { DataScreen } from './src/screens/DataScreen';
 import { MovementScreen } from './src/screens/MovementScreen';
 import { colors, styles } from './src/theme';
 export default function App() {
+  const [scrollEpoch, setScrollEpoch] = useState(0);
   const [tab, setTab] = useState<'Datos' | 'Movimiento'>('Datos');
-  const [address, setAddress] = useState('');
+  const [origin, setOrigin] = useState('');
   const [client, setClient] = useState<SensorClient | null>(null);
   const [data, setData] = useState<SensorData | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef<AbortController | null>(null);
+  const configured = useRef(process.env.EXPO_PUBLIC_API_URL);
   const mounted = useRef(false);
-  useEffect(() => {mounted.current = true; return () => {mounted.current = false; pending.current?.abort();};}, []);
-  async function read(api: SensorClient, capture = false) {
-    if (pending.current) return;
+  const foreground = useRef(AppState.currentState === 'active');
+  function cancel() { pending.current?.abort(); pending.current = null; }
+  async function connect() {
+    cancel(); setClient(null); setData(null); setError(''); setBusy(true);
     const abort = new AbortController(); pending.current = abort;
-    const timer = setTimeout(() => abort.abort(), 35000);
-    setBusy(true); setError('');
     try {
-      const next = await (capture ? api.capture(abort.signal) : api.latest(abort.signal));
-      if (abort.signal.aborted || !mounted.current) return;
-      if (capture && !next) throw new Error('La captura no devolvió datos.');
+      const result = await connectStation(configured.current, abort.signal);
+      if (!mounted.current || abort.signal.aborted) return;
+      setClient(result.client); setOrigin(result.origin); setData(result.data);
+    } catch (cause) {
+      if (mounted.current && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : 'No se pudo conectar.');
+    } finally { if (pending.current === abort) {pending.current = null; if (mounted.current) setBusy(false);} }
+  }
+  useEffect(() => {
+    mounted.current = true; void connect();
+    const subscription = AppState.addEventListener('change', state => {
+      const wasActive = foreground.current;
+      foreground.current = state === 'active';
+      if (state !== 'active') {cancel(); setClient(null); setBusy(false);}
+      else if (!wasActive) void connect(); // Reads only; physical control is never enabled here.
+    });
+    const blur = AppState.addEventListener('blur', () => {foreground.current = false; cancel(); setClient(null); setBusy(false);});
+    const focus = AppState.addEventListener('focus', () => {const wasActive = foreground.current; foreground.current = true; if (!wasActive && !pending.current) void connect();});
+    return () => {mounted.current = false; cancel(); subscription.remove(); blur.remove(); focus.remove();};
+  }, []);
+  // Read-only health checks keep the same client/session while healthy. A failure
+  // unmounts physical control; recovery never acquires or replays motor commands.
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      if (!foreground.current || pending.current || busy) return;
+      if (!client) {void connect(); return;}
+      const abort = new AbortController(); pending.current = abort;
+      try {
+        await connectStation(configured.current, abort.signal);
+      } catch (cause) {
+        if (mounted.current && !abort.signal.aborted) {
+          setClient(null);
+          setError(cause instanceof Error ? cause.message : 'Estación sin respuesta.');
+        }
+      } finally {if (pending.current === abort) pending.current = null;}
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [client, origin, busy]);
+  async function capture() {
+    if (!client || pending.current) return;
+    const abort = new AbortController(); pending.current = abort; setBusy(true); setError('');
+    try {
+      const next = await client.capture(abort.signal);
+      if (!mounted.current || abort.signal.aborted) return;
+      if (!next) throw new Error('La captura no devolvió datos.');
       setData(next);
-    } catch (cause) { if (mounted.current) setError(abort.signal.aborted ? 'Tiempo de espera agotado.' : cause instanceof Error ? cause.message : 'No se pudo conectar.'); }
-    finally { clearTimeout(timer); pending.current = null; if (mounted.current) setBusy(false); }
+    } catch (cause) {
+      if (mounted.current && !abort.signal.aborted) {setClient(null); setError(cause instanceof Error ? cause.message : 'Captura sin confirmar.');}
+    } finally {if (pending.current === abort) {pending.current = null; if (mounted.current) setBusy(false);}}
   }
-  function connect() {
-    try { const next = new SensorClient(address); setClient(next); setData(null); void read(next); }
-    catch (cause) { setClient(null); setError(cause instanceof Error ? cause.message : 'Dirección no válida.'); }
-  }
-  return <SafeAreaProvider><SafeAreaView style={styles.screen}><StatusBar style="light" /><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={styles.eyebrow}>PLANTCLASSIFIER / FIELD LAB</Text><Text style={styles.title}>{tab}</Text>
-    {tab === 'Datos' ? <><View style={styles.card}><Text style={styles.heading}>Conectar con tu estación</Text><Text style={styles.body}>Introduce la dirección actual del backend accesible desde este teléfono.</Text><TextInput accessibilityLabel="Dirección del backend" value={address} onChangeText={value => {setAddress(value); setClient(null); setData(null); setError('');}} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="Origen HTTP(S) del backend" placeholderTextColor={colors.muted} style={styles.input} /><ActionButton title="Consultar última captura" onPress={connect} disabled={busy || !address.trim()} /></View><DataScreen {...{data, busy, error}} connected={!!client} capture={() => {if (client) void read(client, true);}} /></> : <MovementScreen client={client} />}
-    </ScrollView><View accessibilityRole="tablist" style={[styles.row, {padding: 12, borderTopWidth: 1, borderColor: colors.line}]}>{(['Datos', 'Movimiento'] as const).map(name => <Pressable key={name} accessibilityRole="tab" accessibilityState={{selected: tab === name}} onPress={() => setTab(name)} style={[styles.button, {flex: 1, backgroundColor: tab === name ? colors.accent : colors.surface}]}><Text style={[styles.buttonText, {color: tab === name ? colors.background : colors.muted}]}>{name}</Text></Pressable>)}</View></SafeAreaView></SafeAreaProvider>;
+  return <SafeAreaProvider><SafeAreaView style={styles.screen}><StatusBar hidden />
+    <View style={styles.header}><View style={{flex:1}}><Text style={styles.eyebrow}>PLANTCLASSIFIER / FIELD LAB</Text><Text accessibilityLiveRegion="polite" style={styles.body}>{busy ? '● Conectando / leyendo…' : client ? `● Conectado · ${origin}` : '○ Sin conexión'}</Text></View>
+      {(['Datos', 'Movimiento'] as const).map(name => <Pressable key={name} accessibilityRole="tab" accessibilityState={{selected: tab === name}} onPress={() => {if (tab !== name) {cancel(); setBusy(false); setTab(name);}}} style={[styles.button, {backgroundColor: tab === name ? colors.accent : colors.surface}]}><Text style={[styles.buttonText, {color: tab === name ? colors.background : colors.text}]}>{name}</Text></Pressable>)}
+    </View>
+    <ScrollView onScrollBeginDrag={() => setScrollEpoch(value => value + 1)} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {!client && <View style={styles.card}><Text style={styles.heading}>{busy ? 'Conectando con la estación' : 'Sin conexión con la estación'}</Text>
+        <Text style={styles.body}>{configured.current || 'EXPO_PUBLIC_API_URL no configurada'}</Text>
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        <ActionButton title="Reintentar" disabled={busy} onPress={() => void connect()} />
+      </View>}
+      {tab === 'Datos' ? <>
+        <DataScreen {...{data, busy, error}} connected={!!client} capture={() => void capture()} />
+      </> : <MovementScreen client={client} scrollEpoch={scrollEpoch} />}
+    </ScrollView></SafeAreaView></SafeAreaProvider>;
 }
